@@ -316,9 +316,16 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
     ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
     int sampleCounter = 0;
+
     while(kb1 != ke1){
-    	if(sampleCounter == 0 or kb1.isEndKmer()){
+        auto kbStamp = kb1 ;
+
+        if(sampleCounter == 0 or kb1.isEndKmer()){
     		auto idx = bphf->lookup(*kb1) ;
+			  if (idx >= posVec.size()) {
+				std::cerr << "i =  " << i << ", size = " << seqVec.size()
+						  << ", idx = " << idx << ", size = " << posVec.size() << "\n";
+			  }
     		presenceVec[idx] = 1 ;
     		samplePosVec[sampPos_idx] = kb1.pos() ;
     		sampPos_idx++ ;
@@ -334,7 +341,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 			}
 			uint32_t extendNucl ;
 			if(extendLength > 0){
-				extendNucl = seqVec.get_int(2 * kb1.pos(), 2*extendLength) ;
+				extendNucl = seqVec.get_int(2 * kbIt.pos(), 2*extendLength) ;
 				uint32_t appendNucl = extendNucl & 0x3 ;
 				extendNucl = extendNucl >> 2 ;
 				//do something like store these with proper encoding
@@ -367,6 +374,10 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 #endif
     }
   }
+  //check if we find
+
+
+
 
   /** Write the index **/
   std::ofstream descStream(outdir + "/info.json");
