@@ -81,6 +81,16 @@ public:
 
   difference_type pos() { return curr_; }
 
+  bool isEndKmer() {
+	  size_t endPos = curr_ + k_ - 1;
+	  if((*rank_)[endPos] == 1)
+		  return true;
+	  else
+		  return false;
+  }
+
+
+
   pointer operator->() {
     word_ = mer_.getCanonicalWord(); //(mer_.word(0) < rcMer_.word(0)) ?
                                      //mer_.word(0) : rcMer_.word(0);
@@ -163,11 +173,27 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     console->info("total length = {}", tlen);
   }
 
+  //calculate the exact size of
+  //the sample vector
+   int sampleSize = 5;
+   int extensionSize = 4 ;
+   size_t sampledKmers{0};
+   {
+ 	  auto& cnmap = pf.getContigNameMap() ;
+ 	  for(auto& kv : cnmap){
+ 		  auto& r1 = kv.second ;
+ 		  sampledKmers += ((r1.length()-k)/sampleSize + 1) ;
+ 	  }
+ 	  console->info("# sampled kmers ={}", sampledKmers) ;
+ 	  console->info("# skipped kmers ={}", numKmers - sampledKmers) ;
+   }
+
   // now we know the size we need --- create our bitvectors and pack!
   size_t gpos{0};
   size_t w = std::log2(tlen) + 1;
   console->info("positional integer width = {}", w);
   sdsl::int_vector<> seqVec(tlen, 0, 2);
+
   sdsl::bit_vector rankVec(tlen);
   tlen = 0;
 
@@ -244,6 +270,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   //#endif
 
   sdsl::int_vector<> posVec(tlen, 0, w);
+  //fill up normal posVec
   {
     size_t i = 0;
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
@@ -257,6 +284,77 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
       posVec[idx] = kb1.pos();
 
       // validate
+#ifdef PUFFER_DEBUG
+      uint64_t kn = seqVec.get_int(2 * kb1.pos(), 2 * k);
+      CanonicalKmer sk;
+      sk.fromNum(kn);
+      if (sk.isEquivalent(*kb1) == KmerMatchType::NO_MATCH) {
+        my_mer r;
+        r.word__(0) = *kb1;
+        std::cerr << "I thought I saw " << sk.to_str() << ", but I saw " << r.to_str() << "\n";
+      }
+#endif
+    }
+  }
+  //fill up sampledPosVec
+  //store data for sampled information
+  //sdsl::bit_vector samplePosVec(sampledKmers*w+3*(numKmers-sampledKmers)) ;
+  size_t sampPos_idx{0};
+  size_t extNuc_idx{0};
+  sdsl::bit_vector presenceVec(tlen);
+  //need these two to fetch
+  //will use to test
+  sdsl::bit_vector::rank_1_type realPresenceRank(&presenceVec) ;
+  sdsl::bit_vector::select_1_type realPresenceSelect(&presenceVec) ;
+
+  sdsl::int_vector<> auxInfo((numKmers-sampledKmers),0,3*extensionSize) ;
+  sdsl::int_vector<> samplePosVec(sampledKmers, 0, w);
+
+
+  {
+    size_t i = 0;
+    ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
+    ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
+    int sampleCounter = 0;
+    while(kb1 != ke1){
+    	if(sampleCounter == 0 or kb1.isEndKmer()){
+    		auto idx = bphf->lookup(*kb1) ;
+    		presenceVec[idx] = 1 ;
+    		samplePosVec[sampPos_idx] = kb1.pos() ;
+    		sampPos_idx++ ;
+    		kb1++ ;
+    	}else{
+			auto kbIt = kb1 ;
+			int extendLength = 0;
+			while(extendLength < extensionSize){
+				if(kb1.isEndKmer())
+					break ;
+				extendLength++;
+				kb1++;
+			}
+			uint32_t extendNucl ;
+			if(extendLength > 0){
+				extendNucl = seqVec.get_int(2 * kb1.pos(), 2*extendLength) ;
+				uint32_t appendNucl = extendNucl & 0x3 ;
+				extendNucl = extendNucl >> 2 ;
+				//do something like store these with proper encoding
+				for(int j = 1; j < extendLength ; ++j){
+					appendNucl = appendNucl << 3 ;
+					appendNucl = appendNucl | (extendNucl >> 2) ;
+					extendNucl = extendNucl >> 2 ;
+				}
+				//add delimeter
+				appendNucl = appendNucl << 3 ;
+				appendNucl = appendNucl | 0x4 ;
+				auxInfo[extNuc_idx] = appendNucl ;
+				extNuc_idx++ ;
+			}
+    	}
+    	sampleCounter++;
+    	if(sampleCounter%sampleSize == 0){
+    		sampleCounter = 0;
+    	}
+  // validate
 #ifdef PUFFER_DEBUG
       uint64_t kn = seqVec.get_int(2 * kb1.pos(), 2 * k);
       CanonicalKmer sk;
@@ -289,6 +387,9 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   hstream.close();
 
    return 0;
+
+
+
 
   size_t N = nkeys; // keys.size();
   size_t S = seqVec.size();
