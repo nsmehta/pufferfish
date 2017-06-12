@@ -299,16 +299,40 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   //fill up sampledPosVec
   //store data for sampled information
   //sdsl::bit_vector samplePosVec(sampledKmers*w+3*(numKmers-sampledKmers)) ;
-  size_t sampPos_idx{0};
-  size_t extNuc_idx{0};
   sdsl::bit_vector presenceVec(tlen);
+  //check if we find the kmers
+  //in the way we thought we stored them
   //need these two to fetch
-  //will use to test
   sdsl::bit_vector::rank_1_type realPresenceRank(&presenceVec) ;
   sdsl::bit_vector::select_1_type realPresenceSelect(&presenceVec) ;
 
   sdsl::int_vector<> auxInfo((numKmers-sampledKmers),0,3*extensionSize) ;
   sdsl::int_vector<> samplePosVec(sampledKmers, 0, w);
+
+  {
+	size_t i = 0 ;
+    ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
+    ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
+    int sampleCounter = 0 ;
+    for(;kb1!=ke1; ++kb1){
+    	auto idx = bphf->lookup(*kb1) ;
+    	if(sampleCounter == 0 or kb1.isEndKmer()){
+			  if (idx >= posVec.size()) {
+				std::cerr << "i =  " << i << ", size = " << seqVec.size()
+						  << ", idx = " << idx << ", size = " << posVec.size() << "\n";
+			  }
+
+    		presenceVec[idx] = 1 ;
+    	}else{
+    		presenceVec[idx] = 0 ;
+    	}
+    }
+	sampleCounter++;
+	if(sampleCounter%sampleSize == 0){
+		sampleCounter = 0;
+	}
+
+  }
 
 
   {
@@ -320,16 +344,20 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     while(kb1 != ke1){
         auto kbStamp = kb1 ;
 
+    	auto idx = bphf->lookup(*kb1) ;
+    	auto rank = realPresenceRank(idx) ;
         if(sampleCounter == 0 or kb1.isEndKmer()){
-    		auto idx = bphf->lookup(*kb1) ;
 			  if (idx >= posVec.size()) {
 				std::cerr << "i =  " << i << ", size = " << seqVec.size()
 						  << ", idx = " << idx << ", size = " << posVec.size() << "\n";
 			  }
-    		presenceVec[idx] = 1 ;
-    		samplePosVec[sampPos_idx] = kb1.pos() ;
-    		sampPos_idx++ ;
+    		samplePosVec[rank] = kb1.pos() ;
+    		if(idx < rank){
+    			std::cerr << "idx = " << idx
+    					<< "rank = " << rank << ", size = " << presenceVec.size() << "\n" ;
+    		}
     		kb1++ ;
+    		i++ ;
     	}else{
 			auto kbIt = kb1 ;
 			int extendLength = 0;
@@ -338,6 +366,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 					break ;
 				extendLength++;
 				kb1++;
+				i++;
 			}
 			uint32_t extendNucl ;
 			if(extendLength > 0){
@@ -353,8 +382,11 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 				//add delimeter
 				appendNucl = appendNucl << 3 ;
 				appendNucl = appendNucl | 0x4 ;
-				auxInfo[extNuc_idx] = appendNucl ;
-				extNuc_idx++ ;
+				if(idx < rank){
+					std::cerr << "idx = " << idx
+							<< "rank = " << rank << ", size = " << presenceVec.size() << "\n" ;
+				}
+				auxInfo[idx - rank] = appendNucl ;
 			}
     	}
     	sampleCounter++;
@@ -374,7 +406,125 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 #endif
     }
   }
-  //check if we find
+
+  {
+	  size_t found = 0;
+	  size_t notFound = 0;
+	  size_t correctPosCntr = 0;
+	  size_t incorrectPosCntr = 0;
+	  size_t numTrueTxp = 0;
+
+    ScopedTimer st;
+    fastx_parser::FastxPaser<fastx_parser::ReadSeq> parser(read_file, 1, 1);
+    parser.start();
+    // Get the read group by which this thread will
+    // communicate with the parser (*once per-thread*)
+    size_t rn{0};
+    size_t kmer_pos{0};
+    auto rg = parser.getReadGroup();
+    while (parser.refill(rg)) {
+      // Here, rg will contain a chunk of read pairs
+      // we can process.
+      for (auto& rp : rg) {
+        kmer_pos = 0;
+        if (rn % 500000 == 0) {
+          std::cerr << "rn : " << rn << "\n";
+          std::cerr << "found = " << found << ", notFound = " << notFound
+                    << "\n";
+        }
+        ++rn;
+        auto& r1 = rp.seq;
+        CanonicalKmer mer;
+        bool merOK = mer.fromStr(r1); // mer.from_chars(r1.begin());
+        if (!merOK) {
+          std::cerr << "contig too short!";
+          std::exit(1);
+        }
+        auto km = mer.getCanonicalWord();
+        auto idx = bphf->lookup(km);
+        //two options, either found or not
+        uint64_t pos{0} ;
+        if(presenceVec[idx]){
+        	auto rank = realPresenceRank[idx] ;
+        	pos = samplePosVec[rank];
+        }
+
+        uint64_t pos =
+            (res < N) ? posVec[res] : std::numeric_limits<uint64_t>::max();
+        if (pos <= S - k) {
+          uint64_t fk = seqVec.get_int(2 * pos, 2 * k);
+          my_mer fkm;
+          fkm.word__(0) = fk;
+          if (mer.fwWord() == fkm.word(0) or mer.rcWord() == fkm.word(0)) {
+            found += 1;
+            bool correctPos = false;
+            bool foundTxp = false;
+            auto rank = realRank(pos);
+            for (auto& tr : pf.contig2pos[rankOrderedContigIDs[rank]]) {
+              if (trRefIDs[tr.transcript_id()] == rp.name) {
+                foundTxp = true;
+                uint64_t sp = (uint64_t)realSelect(rank);
+                auto relPos = pos - sp;
+                auto clen = (uint64_t)realSelect(rank + 1) - sp;
+                if (relPos + tr.pos() == kmer_pos or
+                    clen - (relPos - tr.pos() - k - 1) == kmer_pos) {
+                  correctPos = true;
+                  break;
+                } else {
+                  // std::cerr << "ours : " << relPos + tr.pos << " , true : "
+                  // << kmer_pos << "\n";
+                }
+              }
+            }
+            if (correctPos) {
+              correctPosCntr++;
+            } else {
+              incorrectPosCntr++;
+            }
+            if (foundTxp) {
+              numTrueTxp++;
+            }
+            // if (!foundTxp) { std::cerr << "failed to find true txp [" <<
+            // rp.name << "]\n"; }
+          } else {
+            // std::cerr << "rn = " << rn - 1 << ", fk = " <<
+            // fkm.get_canonical().to_str() << ", km = " <<
+            // mer.get_canonical().to_str() << ", pkmer = " << pkmer <<" \n";
+            // std::cerr << "found = " << found << ", not found = " << notFound
+            // << "\n";
+            notFound += 1;
+          }
+        } else {
+          // std::cerr << "pos = " << pos << ", shouldn't happen\n";
+          notFound += 1;
+        }
+
+        for (size_t i = k; i < r1.length(); ++i) {
+          mer.shiftFw(r1[i]);
+          km = mer.getCanonicalWord();
+          res = bphf->lookup(km);
+          pos = (res < N) ? posVec[res] : std::numeric_limits<uint64_t>::max();
+          if (pos <= S - k) {
+            uint64_t fk = seqVec.get_int(2 * pos, 62);
+            my_mer fkm;
+            fkm.word__(0) = fk; // fkm.canonicalize();
+            if (mer.fwWord() == fkm.word(0) or mer.rcWord() == fkm.word(0)) {
+              found += 1;
+
+            } else {
+              notFound += 1;
+            }
+          } else {
+            // std::cerr << "pos = " << pos << ", shouldn't happen\n";
+            notFound += 1;
+          }
+        }
+      }
+    }
+
+
+  }
+
 
 
 
