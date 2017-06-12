@@ -173,20 +173,6 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     console->info("total length = {}", tlen);
   }
 
-  //calculate the exact size of
-  //the sample vector
-   int sampleSize = 5;
-   int extensionSize = 4 ;
-   size_t sampledKmers{0};
-   {
- 	  auto& cnmap = pf.getContigNameMap() ;
- 	  for(auto& kv : cnmap){
- 		  auto& r1 = kv.second ;
- 		  sampledKmers += ((r1.length()-k)/sampleSize + 1) ;
- 	  }
- 	  console->info("# sampled kmers ={}", sampledKmers) ;
- 	  console->info("# skipped kmers ={}", numKmers - sampledKmers) ;
-   }
 
   // now we know the size we need --- create our bitvectors and pack!
   size_t gpos{0};
@@ -296,6 +282,20 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 #endif
     }
   }
+  //calculate the exact size of
+  //the sample vector
+   int sampleSize = 5;
+   int extensionSize = 4 ;
+   size_t sampledKmers{0};
+   {
+ 	  auto& cnmap = pf.getContigNameMap() ;
+ 	  for(auto& kv : cnmap){
+ 		  auto& r1 = kv.second ;
+ 		  sampledKmers += ((int)(r1.length()-k+1)/sampleSize + 1) ;
+ 	  }
+ 	  console->info("# sampled kmers ={}", sampledKmers) ;
+ 	  console->info("# skipped kmers ={}", numKmers - sampledKmers) ;
+   }
   //fill up sampledPosVec
   //store data for sampled information
   //sdsl::bit_vector samplePosVec(sampledKmers*w+3*(numKmers-sampledKmers)) ;
@@ -323,14 +323,23 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 			  }
 
     		presenceVec[idx] = 1 ;
+    		if(kb1.isEndKmer())
+    			sampleCounter = -1 ;
+    		i++;
     	}else{
     		presenceVec[idx] = 0 ;
     	}
+
+		sampleCounter++;
+		if(sampleCounter%sampleSize == 0){
+			sampleCounter = 0;
+		}
     }
-	sampleCounter++;
-	if(sampleCounter%sampleSize == 0){
-		sampleCounter = 0;
-	}
+
+	std::cerr << "i = " << i
+			 << " sampledKmers = " << sampledKmers << "\n" ;
+	if(i != sampledKmers)
+		std::exit(1) ;
 
   }
 
@@ -358,6 +367,8 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     		}
     		kb1++ ;
     		i++ ;
+    		if(kb1.isEndKmer())
+    			sampleCounter = -1;
     	}else{
 			auto kbIt = kb1 ;
 			int extendLength = 0;
@@ -380,8 +391,11 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 					extendNucl = extendNucl >> 2 ;
 				}
 				//add delimeter
-				appendNucl = appendNucl << 3 ;
-				appendNucl = appendNucl | 0x4 ;
+				if(extendLength < extensionSize){
+					appendNucl = appendNucl << 3 ;
+					appendNucl = appendNucl | 0x4 ;
+				}
+
 				if(idx < rank){
 					std::cerr << "idx = " << idx
 							<< "rank = " << rank << ", size = " << presenceVec.size() << "\n" ;
@@ -406,13 +420,20 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 #endif
     }
   }
-
+/*
   {
 	  size_t found = 0;
 	  size_t notFound = 0;
 	  size_t correctPosCntr = 0;
 	  size_t incorrectPosCntr = 0;
 	  size_t numTrueTxp = 0;
+
+	 std::vector<std::string> rankOrderedContigIDs;
+
+    auto& cnmap = pf.getContigNameMap();
+    for (auto& kv : cnmap) {
+      rankOrderedContigIDs.push_back(kv.first);
+    }
 
     ScopedTimer st;
     fastx_parser::FastxPaser<fastx_parser::ReadSeq> parser(read_file, 1, 1);
@@ -444,13 +465,52 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
         auto idx = bphf->lookup(km);
         //two options, either found or not
         uint64_t pos{0} ;
+        auto presenceRank = realPresenceRank[idx] ;
+
         if(presenceVec[idx]){
-        	auto rank = realPresenceRank[idx] ;
-        	pos = samplePosVec[rank];
+        	pos = samplePosVec[presenceRank];
+        }else{
+        	size_t shift{0};
+
+        	do{
+				auto extensionPos = idx - presenceRank ;
+				uint32_t extensionWord = auxInfo[extensionPos] ;
+				uint32_t mask{0};
+				mask = mask | 0x7 ;
+				int i = 0;
+				while(i < extensionSize - 1){
+					mask = mask <<  3 ;
+					i++ ;
+				}
+				i = extensionSize ;
+				while(i > 0){
+					auto currCode = extensionWord & mask ;
+					int j = 0;
+					while(j < i-1){
+						currCode = currCode >> 3;
+						j++ ;
+					}
+					if(currCode >= 4){
+						break ;
+					}
+					else{
+						mer.shiftFw((currCode & 0x3)) ;
+						shift++ ;
+					}
+					i--;
+				}
+				km = mer.getCanonicalWord() ;
+				idx = bphf->lookup(km) ;
+        	}while(presenceVec[idx] != 1) ;
+
+        	if(presenceVec[idx]){
+        		auto sampledPos = samplePosVec[idx - realPresenceRank[idx]] ;
+        		pos = sampledPos - shift ;
+        	}
+
+
         }
 
-        uint64_t pos =
-            (res < N) ? posVec[res] : std::numeric_limits<uint64_t>::max();
         if (pos <= S - k) {
           uint64_t fk = seqVec.get_int(2 * pos, 2 * k);
           my_mer fkm;
@@ -523,7 +583,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     }
 
 
-  }
+  }*/
 
 
 
@@ -533,10 +593,13 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   std::ofstream descStream(outdir + "/info.json");
   {
     cereal::JSONOutputArchive indexDesc(descStream);
-    std::string sampStr = "dense";
+    std::string sampStr = "Sparse";
     indexDesc(cereal::make_nvp("sampling_type", sampStr));
+    indexDesc(cereal::make_nvp("sample_size", sampleSize));
+    indexDesc(cereal::make_nvp("extension_size", extensionSize));
     indexDesc(cereal::make_nvp("k", k));
     indexDesc(cereal::make_nvp("num_kmers", nkeys));
+    indexDesc(cereal::make_nvp("num_sampled_kmers",sampledKmers));
     indexDesc(cereal::make_nvp("num_contigs", numContigs));
     indexDesc(cereal::make_nvp("seq_length", tlen));
   }
@@ -544,6 +607,9 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 
   sdsl::store_to_file(posVec, outdir + "/pos.bin");
   std::ofstream hstream(outdir + "/mphf.bin");
+  sdsl::store_to_file(presenceVec, outdir + "/presence.bin");
+  sdsl::store_to_file(samplePosVec, outdir + "/sample_pos.bin");
+  sdsl::store_to_file(auxInfo, outdir + "/extension.bin");
   bphf->save(hstream);
   hstream.close();
 
