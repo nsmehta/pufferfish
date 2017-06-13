@@ -287,11 +287,13 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
    int sampleSize = 5;
    int extensionSize = 4 ;
    size_t sampledKmers{0};
+   std::vector<uint32_t> startSamplePositions ;
    {
  	  auto& cnmap = pf.getContigNameMap() ;
  	  for(auto& kv : cnmap){
  		  auto& r1 = kv.second ;
- 		  sampledKmers += ((int)(r1.length()-k+1)/sampleSize + 1) ;
+ 		  sampledKmers += ((int)(r1.length()-k)/sampleSize + 1) ;
+ 		  startSamplePositions.push_back((r1.length()-k)%sampleSize) ;
  	  }
  	  console->info("# sampled kmers ={}", sampledKmers) ;
  	  console->info("# skipped kmers ={}", numKmers - sampledKmers) ;
@@ -303,8 +305,6 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   //check if we find the kmers
   //in the way we thought we stored them
   //need these two to fetch
-  sdsl::bit_vector::rank_1_type realPresenceRank(&presenceVec) ;
-  sdsl::bit_vector::select_1_type realPresenceSelect(&presenceVec) ;
 
   sdsl::int_vector<> auxInfo((numKmers-sampledKmers),0,3*extensionSize) ;
   sdsl::int_vector<> samplePosVec(sampledKmers, 0, w);
@@ -313,27 +313,30 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 	size_t i = 0 ;
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
     ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
+    size_t contigId{0};
     int sampleCounter = 0 ;
-    for(;kb1!=ke1; ++kb1){
-    	auto idx = bphf->lookup(*kb1) ;
-    	if(sampleCounter == 0 or kb1.isEndKmer()){
-			  if (idx >= posVec.size()) {
-				std::cerr << "i =  " << i << ", size = " << seqVec.size()
-						  << ", idx = " << idx << ", size = " << posVec.size() << "\n";
-			  }
-
-    		presenceVec[idx] = 1 ;
-    		if(kb1.isEndKmer())
-    			sampleCounter = -1 ;
-    		i++;
-    	}else{
-    		presenceVec[idx] = 0 ;
+    while(kb1 != ke1){
+    	auto startPosition = startSamplePositions[contigId] ;
+    	contigId++;
+    	uint32_t skip = 0;
+    	while(skip < startPosition) { skip++ ; kb1++; }
+    	sampleCounter = startPosition ;
+    	while(!kb1.isEndKmer()){
+    		if(sampleCounter%sampleSize == 0){
+    			auto idx = bphf->lookup(*kb1) ;
+    			presenceVec[idx] = 1;
+    			i++;
+    		}
+    		sampleCounter++;
+    		kb1++;
+    	}
+    	if(kb1.isEndKmer()){
+			auto idx = bphf->lookup(*kb1) ;
+			presenceVec[idx] = 1;
+			i++;
+			kb1++;
     	}
 
-		sampleCounter++;
-		if(sampleCounter%sampleSize == 0){
-			sampleCounter = 0;
-		}
     }
 
 	std::cerr << "i = " << i
@@ -343,6 +346,8 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 
   }
 
+  sdsl::bit_vector::rank_1_type realPresenceRank(&presenceVec) ;
+  sdsl::bit_vector::select_1_type realPresenceSelect(&presenceVec) ;
 
   {
     size_t i = 0;
@@ -355,33 +360,38 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 
     	auto idx = bphf->lookup(*kb1) ;
     	auto rank = realPresenceRank(idx) ;
-        if(sampleCounter == 0 or kb1.isEndKmer()){
+        if(presenceVec[idx] == 1){
 			  if (idx >= posVec.size()) {
 				std::cerr << "i =  " << i << ", size = " << seqVec.size()
 						  << ", idx = " << idx << ", size = " << posVec.size() << "\n";
 			  }
-    		samplePosVec[rank] = kb1.pos() ;
+
+#ifdef PUFFER_DEBUG
+				std::cerr << "i =  " << i << ", size = " << seqVec.size()
+						  << ", rank = " << rank << ", size = " << samplePosVec.size() << "\n";
+#endif
+				samplePosVec[rank] = kb1.pos() ;
     		if(idx < rank){
     			std::cerr << "idx = " << idx
     					<< "rank = " << rank << ", size = " << presenceVec.size() << "\n" ;
     		}
     		kb1++ ;
     		i++ ;
-    		if(kb1.isEndKmer())
-    			sampleCounter = -1;
     	}else{
 			auto kbIt = kb1 ;
 			int extendLength = 0;
 			while(extendLength < extensionSize){
+				auto nIdx = bphf->lookup(*kb1) ;
 				if(kb1.isEndKmer())
+					break ;
+				if(presenceVec[nIdx] == 1)
 					break ;
 				extendLength++;
 				kb1++;
-				i++;
 			}
 			uint32_t extendNucl ;
 			if(extendLength > 0){
-				extendNucl = seqVec.get_int(2 * kbIt.pos(), 2*extendLength) ;
+				extendNucl = seqVec.get_int(2 * kbIt.pos() + 2* k, 2*extendLength) ;
 				uint32_t appendNucl = extendNucl & 0x3 ;
 				extendNucl = extendNucl >> 2 ;
 				//do something like store these with proper encoding
@@ -400,12 +410,12 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 					std::cerr << "idx = " << idx
 							<< "rank = " << rank << ", size = " << presenceVec.size() << "\n" ;
 				}
+#ifdef PUFFER_DEBUG
+				std::cerr << "i =  " << i << ", size = " << seqVec.size()
+						  << ", idx - rank = " << (idx - rank) << ", size = " << auxInfo.size() << "\n";
+#endif
 				auxInfo[idx - rank] = appendNucl ;
 			}
-    	}
-    	sampleCounter++;
-    	if(sampleCounter%sampleSize == 0){
-    		sampleCounter = 0;
     	}
   // validate
 #ifdef PUFFER_DEBUG
@@ -419,6 +429,11 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
       }
 #endif
     }
+
+	std::cerr << "i = " << i
+			 << " sampledKmers = " << sampledKmers << "\n" ;
+	if(i != sampledKmers)
+		std::exit(1) ;
   }
 /*
   {
@@ -605,7 +620,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   }
   descStream.close();
 
-  sdsl::store_to_file(posVec, outdir + "/pos.bin");
+  //sdsl::store_to_file(posVec, outdir + "/pos.bin");
   std::ofstream hstream(outdir + "/mphf.bin");
   sdsl::store_to_file(presenceVec, outdir + "/presence.bin");
   sdsl::store_to_file(samplePosVec, outdir + "/sample_pos.bin");
