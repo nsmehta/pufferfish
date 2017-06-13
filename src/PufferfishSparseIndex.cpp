@@ -8,9 +8,9 @@
 #include "PufferfishSparseIndex.hpp"
 #include "PufferFS.hpp"
 
-PufferfishIndex::PufferfishIndex() {}
+PufferfishSparseIndex::PufferfishSparseIndex() {}
 
-PufferfishIndex::PufferfishIndex(const std::string& indexDir) {
+PufferfishSparseIndex::PufferfishSparseIndex(const std::string& indexDir) {
   if (!puffer::fs::DirExists(indexDir.c_str())) {
     std::cerr << "The index directory " << indexDir << " does not exist!\n";
     std::exit(1);
@@ -97,16 +97,16 @@ PufferfishIndex::PufferfishIndex(const std::string& indexDir) {
 
 }
 
-PufferfishIndex::EqClassID PufferfishIndex::getEqClassID(uint32_t contigID) {
+PufferfishSparseIndex::EqClassID PufferfishSparseIndex::getEqClassID(uint32_t contigID) {
   return eqClassIDs_[contigID];
 }
 
-const PufferfishIndex::EqClassLabel& PufferfishIndex::getEqClassLabel(uint32_t contigID) {
+const PufferfishSparseIndex::EqClassLabel& PufferfishSparseIndex::getEqClassLabel(uint32_t contigID) {
   return eqLabels_[getEqClassID(contigID)];
 }
 
 //auto endContigMap() -> decltype(contigTable_.begin()) { return contigTable_.end(); }
-uint64_t PufferfishIndex::getRawPos(CanonicalKmer& mer)  {
+uint64_t PufferfishSparseIndex::getRawPos(CanonicalKmer& mer)  {
   auto km = mer.getCanonicalWord();
   size_t res = hash_->lookup(km);
   uint64_t pos =
@@ -125,15 +125,15 @@ uint64_t PufferfishIndex::getRawPos(CanonicalKmer& mer)  {
   return pos;
 }
 
-bool PufferfishIndex::contains(CanonicalKmer& mer) {
+bool PufferfishSparseIndex::contains(CanonicalKmer& mer) {
   return isValidPos(getRawPos(mer));
 }
 
-bool PufferfishIndex::isValidPos(uint64_t pos) {
+bool PufferfishSparseIndex::isValidPos(uint64_t pos) {
   return pos != std::numeric_limits<uint64_t>::max();
 }
 
-uint32_t PufferfishIndex::contigID(CanonicalKmer& mer) {
+uint32_t PufferfishSparseIndex::contigID(CanonicalKmer& mer) {
     auto km = mer.getCanonicalWord();
     size_t res = hash_->lookup(km);
     uint64_t pos =
@@ -151,13 +151,65 @@ uint32_t PufferfishIndex::contigID(CanonicalKmer& mer) {
     return std::numeric_limits<uint32_t>::max();
   }
 
-auto PufferfishIndex::getRefPos(CanonicalKmer& mer) -> util::ProjectedHits {
+auto PufferfishSparseIndex::getRefPos(CanonicalKmer& mer) -> util::ProjectedHits {
 
   using IterT = std::vector<util::Position>::iterator;//decltype(contigTable_.begin());
   auto km = mer.getCanonicalWord();
-  size_t res = hash_->lookup(km);
-  uint64_t pos =
-    (res < numKmers_) ? pos_[res] : std::numeric_limits<uint64_t>::max();
+  size_t idx = hash_->lookup(km);
+  int extensionSize = 5;
+  //here the logic for searching the sparse
+  //index comes
+        //two options, either found or not
+	uint64_t pos{0} ;
+	auto currRank = presenceRank_(idx) ;
+
+	if(presenceVec_[idx] == 1){
+		pos = sampledPos_[currRank];
+	}else{
+		size_t shift{0};
+
+		do{
+			auto extensionPos = idx - currRank ;
+			uint32_t extensionWord = auxInfo_[extensionPos] ;
+			uint32_t mask{0};
+			mask = mask | 0x7 ;
+			int i = 0;
+			while(i < extensionSize - 1){
+				mask = mask <<  3 ;
+				i++ ;
+			}
+			i = extensionSize ;
+			while(i > 0){
+				auto currCode = extensionWord & mask ;
+				int j = 0;
+				while(j < i-1){
+					currCode = currCode >> 3;
+					j++ ;
+				}
+				if(currCode >= 4){
+					break ;
+				}
+				else{
+					mer.shiftFw((int)(currCode & 0x3)) ;
+					shift++ ;
+				}
+				i--;
+				mask = mask >> 3 ;
+			}
+			km = mer.getCanonicalWord() ;
+			idx = hash_->lookup(km) ;
+		}while(presenceVec_[idx] != 1) ;
+
+		if(presenceVec_[idx]){
+			auto sampledPos = sampledPos_[idx - presenceRank_(idx)] ;
+			pos = sampledPos - shift ;
+		}
+	}
+	//end of sampling based pos detection
+
+
+  //uint64_t pos =
+    //(res < numKmers_) ? pos_[res] : std::numeric_limits<uint64_t>::max();
   if (pos <= seq_.size() - k_) {
     uint64_t fk = seq_.get_int(2 * pos, 2 * k_);
     my_mer fkm;
@@ -181,15 +233,15 @@ auto PufferfishIndex::getRefPos(CanonicalKmer& mer) -> util::ProjectedHits {
   return {std::numeric_limits<uint32_t>::max(), true, 0, k_, core::range<IterT>{}};
 }
 
-uint32_t PufferfishIndex::k() { return k_; }
+uint32_t PufferfishSparseIndex::k() { return k_; }
 
 /**
  * Return the position list (ref_id, pos) corresponding to a contig.
  */
-const std::vector<util::Position>& PufferfishIndex::refList(uint64_t contigRank) {
+const std::vector<util::Position>& PufferfishSparseIndex::refList(uint64_t contigRank) {
   return contigTable_[contigRank];
 }
 
-const std::string& PufferfishIndex::refName(uint64_t refRank) {
+const std::string& PufferfishSparseIndex::refName(uint64_t refRank) {
   return refNames_[refRank];
 }

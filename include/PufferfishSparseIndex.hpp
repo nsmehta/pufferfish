@@ -13,7 +13,7 @@
 #include "BooPHF.h"
 #include "Util.hpp"
 
-class PufferfishIndex {
+class PufferfishSparseIndex {
   using hasher_t = boomphf::SingleHashFunctor<uint64_t>;
   using boophf_t = boomphf::mphf<uint64_t, hasher_t>;
   using EqClassID = uint32_t;
@@ -40,8 +40,8 @@ private:
 
   std::unique_ptr<boophf_t> hash_{nullptr};
 public:
-  PufferfishIndex();
-  PufferfishIndex(const std::string& indexPath);
+  PufferfishSparseIndex();
+  PufferfishSparseIndex(const std::string& indexPath);
 
   // Get the equivalence class ID (i.e., rank of the equivalence class)
   // for a given contig.
