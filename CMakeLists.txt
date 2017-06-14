@@ -12,7 +12,7 @@ set(DEBUG_FLAGS "-pg -g -gstabs")
 
 set(RBF_CPP_FLAGS "${RBF_CPP_FLAGS} ${OPT_FLAGS}")
 
-set(CMAKE_CXX_FLAGS ${RBF_CPP_FLAGS})
+set(CMAKE_CXX_FLAGS "${DEBUG_FLAGS} ${RBF_CPP_FLAGS}")
 
 #set(BOOST_PATH "${PROJECT_SOURCE_DIR}/../3rd_party_inst")
 #set(COSMO_PATH "${PROJECT_SOURCE_DIR}/../")

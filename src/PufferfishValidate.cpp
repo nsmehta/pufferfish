@@ -14,9 +14,10 @@
 
 #include "Util.hpp"
 #include "PufferfishIndex.hpp"
+#include "PufferfishSparseIndex.hpp"
 
 int pufferfishValidate(util::ValidateOptions& validateOpts) {
-  PufferfishIndex pi(validateOpts.indexDir);
+  PufferfishSparseIndex pi(validateOpts.indexDir);
   CanonicalKmer::k(pi.k());
   size_t k = pi.k();
   size_t found = 0;
@@ -53,6 +54,8 @@ int pufferfishValidate(util::ValidateOptions& validateOpts) {
           std::cerr << "contig too short!";
           std::exit(1);
         }
+        std::cerr << rp.name << "\n" ;
+        std::cerr << "offset: 0" << "\n" ;
 
         auto phits = pi.getRefPos(mer);
         if (phits.empty()) {
@@ -78,9 +81,10 @@ int pufferfishValidate(util::ValidateOptions& validateOpts) {
             ++numLostTxp;
           }
         }
-        
+
         for (size_t i = k; i < r1.length(); ++i) {
           mer.shiftFw(r1[i]);
+          std::cerr << "offset: " << (i-k+1) <<"\n" ;
           auto phits = pi.getRefPos(mer);
           if (phits.empty()) {
             ++notFound;

@@ -80,8 +80,13 @@ PufferfishSparseIndex::PufferfishSparseIndex(const std::string& indexDir) {
     CLI::AutoTimer timer {"Loading presence vector", CLI::Timer::Big};
     std::string bfile = indexDir + "/presence.bin";
     sdsl::load_from_file(presenceVec_, bfile);
-    presenceRank_ = decltype(contigBoundary_)::rank_1_type(&presenceVec_);
-    presenceSelect_ = decltype(contigBoundary_)::select_1_type(&presenceVec_);
+    presenceRank_ = decltype(presenceVec_)::rank_1_type(&presenceVec_);
+    presenceSelect_ = decltype(presenceVec_)::select_1_type(&presenceVec_);
+  }
+  {
+    CLI::AutoTimer timer {"Loading canonical vector", CLI::Timer::Big};
+    std::string pfile = indexDir + "/canonical.bin";
+    sdsl::load_from_file(canonicalNess_, pfile);
   }
   {
     CLI::AutoTimer timer {"Loading sampled positions", CLI::Timer::Big};
@@ -151,26 +156,42 @@ uint32_t PufferfishSparseIndex::contigID(CanonicalKmer& mer) {
     return std::numeric_limits<uint32_t>::max();
   }
 
-auto PufferfishSparseIndex::getRefPos(CanonicalKmer& mer) -> util::ProjectedHits {
+auto PufferfishSparseIndex::getRefPos(CanonicalKmer mer) -> util::ProjectedHits {
 
   using IterT = std::vector<util::Position>::iterator;//decltype(contigTable_.begin());
   auto km = mer.getCanonicalWord();
   size_t idx = hash_->lookup(km);
-  int extensionSize = 5;
+  int extensionSize = 4;
   //here the logic for searching the sparse
   //index comes
         //two options, either found or not
 	uint64_t pos{0} ;
+    //hack
+	uint64_t posT =
+		   (idx < numKmers_) ? pos_[idx] : std::numeric_limits<uint64_t>::max();
+
+	std::cerr << " real position for kmer = " << mer.to_str() << " Canonicalness = "<< canonicalNess_[idx]<< " pos " << posT << "\n" ;
+
 	auto currRank = presenceRank_(idx) ;
 
+	//std::cerr << "idx = " << idx << ", size = " << presenceVec_.size() << "\n";
 	if(presenceVec_[idx] == 1){
+		//std::cerr << "currRank = " << currRank << ", size = " << sampledPos_.size() << "\n";
 		pos = sampledPos_[currRank];
 	}else{
 		size_t shift{0};
-
+		int inLoop = 0 ;
 		do{
 			auto extensionPos = idx - currRank ;
+		    //std::cerr << "idx - currRank = " <<(idx - currRank) << ", size = " << auxInfo_.size() << "\n";
 			uint32_t extensionWord = auxInfo_[extensionPos] ;
+			uint64_t extensionWordKmer = auxInfo_[extensionPos] ;
+            /*
+            CanonicalKmer mer2_ ;
+            mer2_.fromNum(extensionWordKmer);
+            std::cerr << " extension mer " <<mer2_.to_str()<<"\n" ;
+            */
+
 			uint32_t mask{0};
 			mask = mask | 0x7 ;
 			int i = 0;
@@ -179,6 +200,7 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer& mer) -> util::ProjectedHits
 				i++ ;
 			}
 			i = extensionSize ;
+			int movements = 0;
 			while(i > 0){
 				auto currCode = extensionWord & mask ;
 				int j = 0;
@@ -190,22 +212,51 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer& mer) -> util::ProjectedHits
 					break ;
 				}
 				else{
-					mer.shiftFw((int)(currCode & 0x3)) ;
+					if(canonicalNess_[idx])
+						mer.shiftFw((int)(currCode & 0x3)) ;
+					else
+						mer.shiftBw((int)(currCode & 0x3)) ;
 					shift++ ;
 				}
 				i--;
 				mask = mask >> 3 ;
+				movements++;
 			}
+
+			if(canonicalNess_[idx]){
+				std::cerr << "moving forward " << movements << "\n" ;
+			}else{
+				std::cerr << "moving backward " << movements << "\n" ;
+			}
+			if(movements > 10)
+				std::exit(1) ;
+
 			km = mer.getCanonicalWord() ;
 			idx = hash_->lookup(km) ;
+			//std::cerr << "idx = " << idx << "\n" ;
+			if(idx >= numKmers_)
+				std::cerr << "this kmer is not found " << mer.to_str() << "\n" ;
+			currRank = presenceRank_(idx) ;
+
+			if(inLoop > 5){
+				std::cerr<<"I will break from the while loop now" << "\n" ;
+				std::cerr<<" mer = "<<mer.to_str() << "\n" ;
+				std::exit(1) ;
+			}else{
+				std::cerr<<" mer = "<<mer.to_str() << "\n" ;
+			}
+
+			inLoop++ ;
 		}while(presenceVec_[idx] != 1) ;
 
 		if(presenceVec_[idx]){
-			auto sampledPos = sampledPos_[idx - presenceRank_(idx)] ;
+			//std::cerr << "idx = " << idx << "\n" ;
+			auto sampledPos = sampledPos_[presenceRank_(idx)] ;
 			pos = sampledPos - shift ;
 		}
 	}
 	//end of sampling based pos detection
+	//std::cerr << " pos_ = " << pos << "\n" ;
 
 
   //uint64_t pos =

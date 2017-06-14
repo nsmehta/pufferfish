@@ -1,5 +1,5 @@
-#ifndef _PUFFERFISH_INDEX_HPP_
-#define _PUFFERFISH_INDEX_HPP_
+#ifndef _PUFFERFISHSPARSE_INDEX_HPP_
+#define _PUFFERFISHSPARSE_INDEX_HPP_
 
 #include <vector>
 
@@ -33,6 +33,7 @@ private:
   sdsl::int_vector<> pos_;
   //for sparse representation
   sdsl::bit_vector presenceVec_;
+  sdsl::bit_vector canonicalNess_;
   sdsl::bit_vector::rank_1_type presenceRank_;
   sdsl::bit_vector::select_1_type presenceSelect_;
   sdsl::int_vector<> auxInfo_ ;
@@ -77,7 +78,7 @@ public:
   bool isValidPos(uint64_t pos);
   // Returns a ProjectedHits object that contains all of the
   // projected reference hits for the given kmer.
-  auto getRefPos(CanonicalKmer& mer) -> util::ProjectedHits;
+  auto getRefPos(CanonicalKmer mer) -> util::ProjectedHits;
 };
 
 #endif // _PUFFERFISH_INDEX_HPP_

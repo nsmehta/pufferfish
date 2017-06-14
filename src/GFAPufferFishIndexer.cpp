@@ -4,6 +4,7 @@
 #include <iterator>
 #include <type_traits>
 #include <vector>
+#include <bitset>
 
 #include "cereal/archives/json.hpp"
 #include "CanonicalKmer.hpp"
@@ -90,6 +91,9 @@ public:
   }
 
 
+  bool isCanonical(){
+	  return mer_.fwWord() == mer_.getCanonicalWord() ;
+  }
 
   pointer operator->() {
     word_ = mer_.getCanonicalWord(); //(mer_.word(0) < rcMer_.word(0)) ?
@@ -301,13 +305,22 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   //fill up sampledPosVec
   //store data for sampled information
   //sdsl::bit_vector samplePosVec(sampledKmers*w+3*(numKmers-sampledKmers)) ;
-  sdsl::bit_vector presenceVec(tlen);
+  sdsl::bit_vector presenceVec(nkeys);
+  sdsl::bit_vector canonicalNess(nkeys);
   //check if we find the kmers
   //in the way we thought we stored them
   //need these two to fetch
 
   sdsl::int_vector<> auxInfo((numKmers-sampledKmers),0,3*extensionSize) ;
   sdsl::int_vector<> samplePosVec(sampledKmers, 0, w);
+  {
+    ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
+    ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
+    for(;kb1!=ke1;++kb1){
+    	auto idx = bphf->lookup(*kb1) ;
+    	canonicalNess[idx] = kb1.isCanonical() ;
+    }
+  }
 
   {
 	size_t i = 0 ;
@@ -371,6 +384,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 						  << ", rank = " << rank << ", size = " << samplePosVec.size() << "\n";
 #endif
 				samplePosVec[rank] = kb1.pos() ;
+
     		if(idx < rank){
     			std::cerr << "idx = " << idx
     					<< "rank = " << rank << ", size = " << presenceVec.size() << "\n" ;
@@ -378,6 +392,8 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     		kb1++ ;
     		i++ ;
     	}else{
+            bool debugExt = false ;
+
 			auto kbIt = kb1 ;
 			int extendLength = 0;
 			while(extendLength < extensionSize){
@@ -392,12 +408,19 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 			uint32_t extendNucl ;
 			if(extendLength > 0){
 				extendNucl = seqVec.get_int(2 * kbIt.pos() + 2* k, 2*extendLength) ;
+
+                /*
+                std::bitset<32> ext1(extendNucl);
+                std::cout<<"extension bits "<<ext1<<"\n" ;
+                std::cout<<"extension length "<<extendLength<<"\n" ;
+                */
+
 				uint32_t appendNucl = extendNucl & 0x3 ;
 				extendNucl = extendNucl >> 2 ;
 				//do something like store these with proper encoding
 				for(int j = 1; j < extendLength ; ++j){
 					appendNucl = appendNucl << 3 ;
-					appendNucl = appendNucl | (extendNucl >> 2) ;
+					appendNucl = appendNucl | (extendNucl & 0x3) ;
 					extendNucl = extendNucl >> 2 ;
 				}
 				//add delimeter
@@ -405,6 +428,11 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 					appendNucl = appendNucl << 3 ;
 					appendNucl = appendNucl | 0x4 ;
 				}
+                /*
+                std::bitset<32> ext2(appendNucl);
+                std::cout<<"appended bits "<<ext2<<"\n" ;
+                std::exit(1) ;
+                */
 
 				if(idx < rank){
 					std::cerr << "idx = " << idx
@@ -625,6 +653,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   sdsl::store_to_file(presenceVec, outdir + "/presence.bin");
   sdsl::store_to_file(samplePosVec, outdir + "/sample_pos.bin");
   sdsl::store_to_file(auxInfo, outdir + "/extension.bin");
+  sdsl::store_to_file(canonicalNess, outdir + "/canonical.bin");
   bphf->save(hstream);
   hstream.close();
 
