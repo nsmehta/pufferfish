@@ -1,5 +1,6 @@
 #include <fstream>
 #include <iostream>
+#include <bitset>
 
 #include "cereal/archives/json.hpp"
 #include "cereal/archives/binary.hpp"
@@ -156,10 +157,14 @@ uint32_t PufferfishSparseIndex::contigID(CanonicalKmer& mer) {
     return std::numeric_limits<uint32_t>::max();
   }
 
-auto PufferfishSparseIndex::getRefPos(CanonicalKmer mer) -> util::ProjectedHits {
+auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits {
 
   using IterT = std::vector<util::Position>::iterator;//decltype(contigTable_.begin());
-  auto km = mer.getCanonicalWord();
+
+  auto km = mern.getCanonicalWord() ;
+  CanonicalKmer mer;
+  mer.fromNum(mern.getCanonicalWord()) ;
+  //bool searchCanon = (mer.fwWord() == mer.getCanonicalWord()) ;
   size_t idx = hash_->lookup(km);
   int extensionSize = 4;
   //here the logic for searching the sparse
@@ -170,11 +175,19 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mer) -> util::ProjectedHits 
 	uint64_t posT =
 		   (idx < numKmers_) ? pos_[idx] : std::numeric_limits<uint64_t>::max();
 
-	std::cerr << " real position for kmer = " << mer.to_str() << " Canonicalness = "<< canonicalNess_[idx]<< " pos " << posT << "\n" ;
+	//std::cerr << " real position for kmer = " << mer.to_str() << " Canonicalness = "<< canonicalNess_[idx]<< " pos " << posT << "\n" ;
 
 	auto currRank = presenceRank_(idx) ;
 
 	//std::cerr << "idx = " << idx << ", size = " << presenceVec_.size() << "\n";
+/*
+        if(mer.to_str() == "AGGACTCTTAGTCTCTCTGGGTCTTTTTACT" or mer.to_str() == "AGTAAAAAGACCCAGAGAGACTAAGAGTCCT"){
+            std::cerr << "the kmer is "<<mer.to_str()<< "\n" ;
+            std::cerr<<"presence vec: " << presenceVec_[idx] << "\n" ;
+            //std::exit(1);
+        }
+*/
+
 	if(presenceVec_[idx] == 1){
 		//std::cerr << "currRank = " << currRank << ", size = " << sampledPos_.size() << "\n";
 		pos = sampledPos_[currRank];
@@ -185,12 +198,17 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mer) -> util::ProjectedHits 
 			auto extensionPos = idx - currRank ;
 		    //std::cerr << "idx - currRank = " <<(idx - currRank) << ", size = " << auxInfo_.size() << "\n";
 			uint32_t extensionWord = auxInfo_[extensionPos] ;
-			uint64_t extensionWordKmer = auxInfo_[extensionPos] ;
+            std::bitset<12> ext1(extensionWord) ;
+            //std::cerr << " extension bits " <<ext1<<"\n" ;
+            if(!canonicalNess_[idx])
+                mer.swap();
             /*
             CanonicalKmer mer2_ ;
             mer2_.fromNum(extensionWordKmer);
-            std::cerr << " extension mer " <<mer2_.to_str()<<"\n" ;
+            std::cerr << " extension bits " <<mer2_.to_str()<<"\n" ;
             */
+
+            auto merStamp = mer ;
 
 			uint32_t mask{0};
 			mask = mask | 0x7 ;
@@ -201,9 +219,11 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mer) -> util::ProjectedHits 
 			}
 			i = extensionSize ;
 			int movements = 0;
+
 			while(i > 0){
 				auto currCode = extensionWord & mask ;
 				int j = 0;
+
 				while(j < i-1){
 					currCode = currCode >> 3;
 					j++ ;
@@ -212,22 +232,31 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mer) -> util::ProjectedHits 
 					break ;
 				}
 				else{
-					if(canonicalNess_[idx])
+					if(canonicalNess_[idx]){
 						mer.shiftFw((int)(currCode & 0x3)) ;
-					else
-						mer.shiftBw((int)(currCode & 0x3)) ;
+                    }
+					else{
+                        //mer.swap();
+                        //std::cerr << "I am here"<< "\n";
+						mer.shiftFw((int)(currCode & 0x3)) ;
+                    }
 					shift++ ;
 				}
+                //if(merStamp.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT")
+                  //  std::cerr << "after shift the kmer " << mer.to_str() << "\n" ;
+
+
 				i--;
 				mask = mask >> 3 ;
 				movements++;
 			}
 
+            /*
 			if(canonicalNess_[idx]){
 				std::cerr << "moving forward " << movements << "\n" ;
 			}else{
 				std::cerr << "moving backward " << movements << "\n" ;
-			}
+			}*/
 			if(movements > 10)
 				std::exit(1) ;
 
@@ -243,7 +272,7 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mer) -> util::ProjectedHits 
 				std::cerr<<" mer = "<<mer.to_str() << "\n" ;
 				std::exit(1) ;
 			}else{
-				std::cerr<<" mer = "<<mer.to_str() << "\n" ;
+				//std::cerr<<" mer = "<<mer.to_str() << "\n" ;
 			}
 
 			inLoop++ ;

@@ -317,6 +317,15 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
     ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
     for(;kb1!=ke1;++kb1){
+        my_mer r;
+        r.word__(0) = *kb1;
+        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
+        if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
+        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT"){
+            std::cerr << "the kmer is "<<r.to_str()<< "\n" ;
+            std::cerr << "canonical ness "<<kb1.isCanonical() << "\n" ;
+         //   std::exit(1);
+        }
     	auto idx = bphf->lookup(*kb1) ;
     	canonicalNess[idx] = kb1.isCanonical() ;
     }
@@ -330,10 +339,25 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     int sampleCounter = 0 ;
     while(kb1 != ke1){
     	auto startPosition = startSamplePositions[contigId] ;
+
+    //debug -deleted later
+
+        my_mer r;
+        r.word__(0) = *kb1;
+        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
+        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
+        if(r.to_str() == "ACACGGTCTGGACCCGGTCCACGGACTCTAA" or r.to_str() == "TTAGAGTCCGTGGACCGGGTCCAGACCGTGT"){
+            std::cerr << "the kmer is "<<r.to_str()<< "\n" ;
+            std::cerr << "start pos " << startPosition <<"\n" ;
+            std::cerr << "is end "<<kb1.isEndKmer() << "\n" ;
+        }
+
+
     	contigId++;
     	uint32_t skip = 0;
     	while(skip < startPosition) { skip++ ; kb1++; }
-    	sampleCounter = startPosition ;
+    	sampleCounter = 0 ;
+
     	while(!kb1.isEndKmer()){
     		if(sampleCounter%sampleSize == 0){
     			auto idx = bphf->lookup(*kb1) ;
@@ -358,6 +382,37 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 		std::exit(1) ;
 
   }
+//debug block -- will remove later
+
+  {
+    ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
+    ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
+    for(;kb1!=ke1;++kb1){
+        my_mer r;
+        r.word__(0) = *kb1;
+        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
+        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
+        if(r.to_str() == "ACACGGTCTGGACCCGGTCCACGGACTCTAA" or r.to_str() == "TTAGAGTCCGTGGACCGGGTCCAGACCGTGT"){
+            std::cerr << "the kmer is "<<r.to_str()<< "\n" ;
+            std::cerr << "canonical ness "<<kb1.isCanonical() << "\n" ;
+            std::cerr << "is end "<<kb1.isEndKmer() << "\n" ;
+
+            auto idx = bphf->lookup(*kb1);
+            std::cerr<<"presence vec: " << presenceVec[idx] << "\n" ;
+            auto kbIt = kb1 ;
+            int i = 20;
+            while(i > 0){
+                idx = bphf->lookup(*kbIt) ;
+                r.word__(0) = *kbIt ;
+                std::cerr<< r.to_str() <<" presence vec: " << presenceVec[idx] << "\n" ;
+                kbIt++;
+                i--;
+            }
+            //std::exit(1);
+        }
+    }
+
+  }
 
   sdsl::bit_vector::rank_1_type realPresenceRank(&presenceVec) ;
   sdsl::bit_vector::select_1_type realPresenceSelect(&presenceVec) ;
@@ -373,6 +428,15 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 
     	auto idx = bphf->lookup(*kb1) ;
     	auto rank = realPresenceRank(idx) ;
+
+        my_mer r;
+        r.word__(0) = *kb1;
+        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
+        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
+        if(r.to_str() == "ACACGGTCTGGACCCGGTCCACGGACTCTAA" or r.to_str() == "TTAGAGTCCGTGGACCGGGTCCAGACCGTGT"){
+            std::cerr << "the kmer found:  "<<r.to_str() << "\n" ;
+            std::cerr << " canonicalness: " << canonicalNess[idx] << "\n";
+        }
         if(presenceVec[idx] == 1){
 			  if (idx >= posVec.size()) {
 				std::cerr << "i =  " << i << ", size = " << seqVec.size()
@@ -398,10 +462,14 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 			int extendLength = 0;
 			while(extendLength < extensionSize){
 				auto nIdx = bphf->lookup(*kb1) ;
-				if(kb1.isEndKmer())
+                if(kb1.isEndKmer()){
+                    //std::cerr<<"breaking b/c end kmer "<<"\n" ;
 					break ;
-				if(presenceVec[nIdx] == 1)
+                }
+                if(presenceVec[nIdx] == 1){
+                    //std::cerr<<"breaking b/c end presenceVec "<<"\n" ;
 					break ;
+                }
 				extendLength++;
 				kb1++;
 			}
@@ -414,6 +482,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
                 std::cout<<"extension bits "<<ext1<<"\n" ;
                 std::cout<<"extension length "<<extendLength<<"\n" ;
                 */
+                auto extendNucl1 = extendNucl ;
 
 				uint32_t appendNucl = extendNucl & 0x3 ;
 				extendNucl = extendNucl >> 2 ;
@@ -428,11 +497,36 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 					appendNucl = appendNucl << 3 ;
 					appendNucl = appendNucl | 0x4 ;
 				}
+                int e2 = extendLength + 1;
+                while(e2 < extensionSize){
+                    appendNucl = appendNucl << 3;
+                    e2++;
+                }
+
                 /*
-                std::bitset<32> ext2(appendNucl);
+                std::bitset<16> ext2(appendNucl);
                 std::cout<<"appended bits "<<ext2<<"\n" ;
                 std::exit(1) ;
                 */
+//#ifdef PUFFER_DEBUG
+      //uint64_t kn = seqVec.get_int(2 * kb1.pos(), 2 * k);
+        my_mer r;
+        r.word__(0) = *kbIt;
+        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
+        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
+        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT"){
+        if(r.to_str() == "ACACGGTCTGGACCCGGTCCACGGACTCTAA" or r.to_str() == "TTAGAGTCCGTGGACCGGGTCCAGACCGTGT"){
+            std::cerr << "the kmer is "<<r.to_str()<< "\n" ;
+            std::bitset<32> ext2(appendNucl) ;
+            std::cerr << " ext "<<ext2 << "\n" ;
+         //   std::exit(1);
+        }
+
+
+//#endif
+                if(extendNucl1 != 0x0 and appendNucl == 0x0){
+                    std::cerr<<"this should not happen\n";
+                }
 
 				if(idx < rank){
 					std::cerr << "idx = " << idx
@@ -444,7 +538,10 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 #endif
 				auxInfo[idx - rank] = appendNucl ;
 			}
+            kbStamp++ ;
+            kb1 = kbStamp ;
     	}
+
   // validate
 #ifdef PUFFER_DEBUG
       uint64_t kn = seqVec.get_int(2 * kb1.pos(), 2 * k);

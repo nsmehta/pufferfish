@@ -54,8 +54,10 @@ int pufferfishValidate(util::ValidateOptions& validateOpts) {
           std::cerr << "contig too short!";
           std::exit(1);
         }
-        std::cerr << rp.name << "\n" ;
-        std::cerr << "offset: 0" << "\n" ;
+
+        //std::cerr << "Length of the string " << r1.length() << "\n" ;
+        //std::cerr << rp.name << "\n" ;
+        //std::cerr << "offset: 0" << "\n" ;
 
         auto phits = pi.getRefPos(mer);
         if (phits.empty()) {
@@ -84,7 +86,7 @@ int pufferfishValidate(util::ValidateOptions& validateOpts) {
 
         for (size_t i = k; i < r1.length(); ++i) {
           mer.shiftFw(r1[i]);
-          std::cerr << "offset: " << (i-k+1) <<"\n" ;
+          //std::cerr << "offset: " << (i-k+1) <<"\n" ;
           auto phits = pi.getRefPos(mer);
           if (phits.empty()) {
             ++notFound;
