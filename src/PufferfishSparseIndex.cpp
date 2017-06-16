@@ -70,12 +70,12 @@ PufferfishSparseIndex::PufferfishSparseIndex(const std::string& indexDir) {
     std::string sfile = indexDir + "/seq.bin";
     sdsl::load_from_file(seq_, sfile);
   }
-
+  /*
   {
     CLI::AutoTimer timer {"Loading positions", CLI::Timer::Big};
     std::string pfile = indexDir + "/pos.bin";
     sdsl::load_from_file(pos_, pfile);
-  }
+  }*/
 
   {
     CLI::AutoTimer timer {"Loading presence vector", CLI::Timer::Big};
@@ -172,8 +172,8 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits
         //two options, either found or not
 	uint64_t pos{0} ;
     //hack
-	uint64_t posT =
-		   (idx < numKmers_) ? pos_[idx] : std::numeric_limits<uint64_t>::max();
+	//uint64_t posT =
+	//	   (idx < numKmers_) ? pos_[idx] : std::numeric_limits<uint64_t>::max();
 
     /*
     if(mern.to_str() == "CTTAGTCTCTCTGGGTCTTTTTACTTAAGTC")
