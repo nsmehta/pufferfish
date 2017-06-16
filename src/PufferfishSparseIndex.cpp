@@ -175,8 +175,10 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits
 	uint64_t posT =
 		   (idx < numKmers_) ? pos_[idx] : std::numeric_limits<uint64_t>::max();
 
-	//std::cerr << " real position for kmer = " << mer.to_str() << " Canonicalness = "<< canonicalNess_[idx]<< " pos " << posT << "\n" ;
-
+    /*
+    if(mern.to_str() == "CTTAGTCTCTCTGGGTCTTTTTACTTAAGTC")
+	    std::cerr << " real position for kmer = " << mer.to_str() << " Canonicalness = "<< canonicalNess_[idx]<< " pos " << posT << "\n" ;
+    */
 	auto currRank = presenceRank_(idx) ;
 
 	//std::cerr << "idx = " << idx << ", size = " << presenceVec_.size() << "\n";
@@ -192,14 +194,18 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits
 		//std::cerr << "currRank = " << currRank << ", size = " << sampledPos_.size() << "\n";
 		pos = sampledPos_[currRank];
 	}else{
-		size_t shift{0};
+		size_t shiftp{0};
+        size_t shiftm{0};
 		int inLoop = 0 ;
 		do{
 			auto extensionPos = idx - currRank ;
 		    //std::cerr << "idx - currRank = " <<(idx - currRank) << ", size = " << auxInfo_.size() << "\n";
 			uint32_t extensionWord = auxInfo_[extensionPos] ;
             std::bitset<12> ext1(extensionWord) ;
-            //std::cerr << " extension bits " <<ext1<<"\n" ;
+                /*
+                if(mern.to_str() == "CTTAGTCTCTCTGGGTCTTTTTACTTAAGTC")
+                    std::cerr << " extension bits " <<ext1<<"\n" ;
+                */
             if(!canonicalNess_[idx])
                 mer.swap();
             /*
@@ -234,17 +240,19 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits
 				else{
 					if(canonicalNess_[idx]){
 						mer.shiftFw((int)(currCode & 0x3)) ;
+                        shiftp++;
                     }
 					else{
                         //mer.swap();
                         //std::cerr << "I am here"<< "\n";
 						mer.shiftFw((int)(currCode & 0x3)) ;
+                        shiftm++;
                     }
-					shift++ ;
 				}
-                //if(merStamp.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT")
-                  //  std::cerr << "after shift the kmer " << mer.to_str() << "\n" ;
-
+                /*
+                if(mern.to_str() == "CTTAGTCTCTCTGGGTCTTTTTACTTAAGTC")
+                    std::cerr << "after shift the kmer " << mer.to_str() << "\n" ;
+                */
 
 				i--;
 				mask = mask >> 3 ;
@@ -281,11 +289,16 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits
 		if(presenceVec_[idx]){
 			//std::cerr << "idx = " << idx << "\n" ;
 			auto sampledPos = sampledPos_[presenceRank_(idx)] ;
-			pos = sampledPos - shift ;
+			pos = sampledPos - (shiftp + shiftm);
+            //pos = sampledPos - shiftm ;
+               // if(mern.to_str() == "CTTAGTCTCTCTGGGTCTTTTTACTTAAGTC")
+	             //   std::cerr << " sampled pos " << sampledPos << " pos_ = " << pos << " shiftm "<< shiftm << " shiftp "<< shiftp << "\n" ;
+              //  if(pos != posT){
+                //    std::cerr << posT << " " << pos<<"\n" ;
+               // }
 		}
 	}
 	//end of sampling based pos detection
-	//std::cerr << " pos_ = " << pos << "\n" ;
 
 
   //uint64_t pos =
@@ -294,7 +307,7 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits
     uint64_t fk = seq_.get_int(2 * pos, 2 * k_);
     my_mer fkm;
     fkm.word__(0) = fk;
-    auto keq = mer.isEquivalent(fkm);
+    auto keq = mern.isEquivalent(fkm);
     if (keq != KmerMatchType::NO_MATCH) {
       auto rank = contigRank_(pos);
       auto& pvec = contigTable_[rank];
@@ -306,6 +319,8 @@ auto PufferfishSparseIndex::getRefPos(CanonicalKmer mern) -> util::ProjectedHits
       bool hitFW = keq == KmerMatchType::IDENTITY_MATCH;
       return {relPos, hitFW, clen, k_, core::range<IterT>{pvec.begin(), pvec.end()}};
     } else {
+      //std::cerr << " not found " << mern.to_str() << "\n";
+      //std::exit(1) ;
       return {std::numeric_limits<uint32_t>::max(), true, 0, k_, core::range<IterT>{}};
     }
   }
