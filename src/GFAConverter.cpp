@@ -4,6 +4,7 @@
 #include <algorithm>
 
 GFAConverter::GFAConverter(const char* gfaFileName, size_t input_k) {
+		filename_ = gfaFileName;
   std::cerr << "Reading GFA file " << gfaFileName << "\n";
   file.reset(new zstr::ifstream(gfaFileName));
   k = input_k;
@@ -13,78 +14,75 @@ void GFAConverter::parseFile() {
   std::string ln;
   std::string tag, id, value;
   size_t contig_cnt{0};
-  std::map<std::pair<uint64_t, bool>, bool> oldPathStart;
-  std::map<std::pair<uint64_t, bool>, bool> oldPathEnd;
-  {
+  {	
     std::cerr << "Start reading GFA file... \n";
     spp::sparse_hash_map<std::string, uint64_t> seq2newid;
     uint64_t idCntr = 0;
     while (std::getline(*file, ln)) {
       char firstC = ln[0];
-      if (firstC != 'S' and firstC != 'P')
+      if (firstC != 'S')
         continue;
       stx::string_view lnview(ln);
       std::vector<stx::string_view> splited = util::split(lnview, '\t');
-      tag = splited[0].to_string();
       id = splited[1].to_string();
       value = splited[2].to_string();
-      // A segment line
-      if (tag == "S") {
         if (util::is_number(id)) {
 		  uint64_t contigId = std::stoll(id);
           processContigSeq(contigId, value, seq2newid, idCntr);
         }
         contig_cnt++;
-      }
+	}
+
+	file.reset(new zstr::ifstream(filename_));
+	while (std::getline(*file, ln)) {
+ 	   char firstC = ln[0];
+		   if (firstC != 'P')
+				continue;
+      stx::string_view lnview(ln);
+      std::vector<stx::string_view> splited = util::split(lnview, '\t');
+      id = splited[1].to_string();
+      //value = splited[2].to_string();
       // A path line
-      if (tag == "P") {
         auto pvalue = splited[2];
         std::vector<std::pair<uint64_t, bool>> contigVec =
             util::explode(pvalue, ',');
         // parse value and add all conitgs to contigVec
         path[id] = contigVec;
-        oldPathStart[std::make_pair(contigVec[0].first, contigVec[0].second)] =
-            true;
-        oldPathEnd[std::make_pair(contigVec[contigVec.size() - 1].first,
-                                  contigVec[contigVec.size() - 1].second)] =
-            true;
-      }
+	auto& oldId = contigVec[0];	
+    auto& newIdList = old2newids[oldId.first];//s.first];
+	if (oldId.second) { //Old segment appears in forward orientation
+		if (newIdList[0].second) // if first segment matches the old one in forward orientation, it shouldn't be updated from its start point
+				newSegs[newIdList[0].first].set_start();
+		else // ow, it shouldn't be updated from its end point
+				newSegs[newIdList[0].first].set_end();
+	}
+	else { //Old segment appears in reverse orientation
+		auto lastIdx = newIdList.size()-1;
+		if (newIdList[lastIdx].second) newSegs[newIdList[lastIdx].first].set_end();
+		else newSegs[newIdList[lastIdx].first].set_start();
+	}
+
+	oldId = contigVec[contigVec.size()-1];	
+    newIdList = old2newids[oldId.first];//s.first];
+	if (oldId.second) { //Old segment appears in forward orientation
+		auto lastIdx = newIdList.size()-1;
+		if (newIdList[lastIdx].second) // if first segment matches the old one in forward orientation, it shouldn't be updated from its start point
+				newSegs[newIdList[lastIdx].first].set_end();
+		else // ow, it shouldn't be updated from its end point
+				newSegs[newIdList[lastIdx].first].set_start();
+	}
+	else { //Old segment appears in reverse orientation
+		if (newIdList[0].second) newSegs[newIdList[0].first].set_start();
+		else newSegs[newIdList[0].first].set_end();
+	}
     }
     std::cerr << "Done Reading\nStart updating pathStart and pathEnd...\n";
   }
-  // set pathStart and pathEnd to newids
-  auto cntr = 0;
-  for (auto& kv : oldPathStart) {
-    auto s = kv.first; // just existence of key matters
-    auto newIdList = old2newids[s.first];
-    cntr++;
-    if (s.second) { // the positive orientation of the old id
-      // Add the first new id and keep its orientation
-      pathStart[newIdList[0]] = true;
-    } else {
-      // Add last element in new is list and flip the orientation
-      auto newIdOri = newIdList[newIdList.size() - 1];
-      pathStart[std::make_pair(newIdOri.first, !newIdOri.second)] = true;
-    }
-    oldPathStart.erase(s);
-  }
-  for (auto& kv : oldPathEnd) {
-    auto s = kv.first; // just existence of key matters
-    auto newIdList = old2newids[s.first];
-    if (s.second) { // the positive orientation of the old id
-      // Add the first new id and keep its orientation
-      pathEnd[newIdList[newIdList.size() - 1]] = true;
-    } else {
-      // Add last element in new is list and flip the orientation
-      auto newIdOri = newIdList[0];
-      pathEnd[std::make_pair(newIdOri.first, !newIdOri.second)] = true;
-    }
-    oldPathEnd.erase(s);
-  }
+
   std::cerr << "Done updating pathStart and pathEnd based on the newIds\n";
   std::cerr << "Total # of Contigs : " << contig_cnt
             << "\tTotal # of numerical Contigs : " << old2newids.size()
-            << " \tTotal # of contigs after spliting :" << new2seqAoldids.size()
+            << " \tTotal # of contigs after spliting :" << newSegs.size() //new2seqAoldids.size()
             << "\n";
 }
 
@@ -169,7 +167,16 @@ void GFAConverter::processContigSeq(
       seq2newid[seq] = newId;
     }
 
-    if (new2seqAoldids.find(newId) != new2seqAoldids.end()) {
+	if (newId < newSegs.size()) { // newSeg already created. Just add the new oldid
+      newSegs[newId].add_oldId(contigId, plus);
+	} else {
+		SegInfo si(seq);
+		si.add_oldId(contigId, plus);
+		newSegs.push_back(si);
+      	if (seq.size() == k)
+        	ksizeContig.push_back(newId);
+	}
+/*    if (new2seqAoldids.find(newId) != new2seqAoldids.end()) {
       new2seqAoldids[newId].second.emplace_back(contigId, plus);
     } else {
       std::vector<std::pair<uint64_t, bool>> ids;
@@ -177,7 +184,7 @@ void GFAConverter::processContigSeq(
       new2seqAoldids[newId] = std::make_pair(seq, ids);
       if (seq.size() == k)
         ksizeContig.push_back(newId);
-    }
+    }*/
     old2newids[contigId].emplace_back(newId, plus);
   }
 }
@@ -203,9 +210,10 @@ void GFAConverter::randomWalk() {
 }
 
 void GFAConverter::eraseFromOldList(uint64_t nodeId) {
-  if (new2seqAoldids.contains(nodeId)) {
-    auto& seqAoldids = new2seqAoldids[nodeId];
-    std::vector<std::pair<uint64_t, bool>>& oldids = seqAoldids.second;
+//  if (new2seqAoldids.contains(nodeId)) {
+  if (newSegs[nodeId].is_valid()) {
+  //  auto& seqAoldids = new2seqAoldids[nodeId];
+    std::vector<std::pair<uint64_t, bool>>& oldids = newSegs[nodeId].get_oldIds();// seqAoldids.second;
     for (auto& idOri : oldids) {
       uint64_t& id = idOri.first;
       auto& newids = old2newids[id];
@@ -221,16 +229,16 @@ void GFAConverter::eraseFromOldList(uint64_t nodeId) {
 void GFAConverter::mergeIn(pufg::Node& n) {
   uint64_t id = n.getId();
   pufg::edgetuple& edge = n.getOnlyRealIn();
-  if (!new2seqAoldids.contains(id)) {
+	if (!newSegs[id].is_valid()) {
     std::cerr << "[mergeIn] NO; the id " << id
               << " was not in new2seqAoldids!\n";
   }
-  if (!new2seqAoldids.contains(edge.contigId)) {
+	if (!newSegs[edge.contigId].is_valid()) {
     std::cerr << "[mergeIn] NO; the edge.contigId " << edge.contigId
               << " was not in new2seqAoldids!\n";
   }
-  std::string& tobeMerged = new2seqAoldids[id].first;
-  std::string& seq = new2seqAoldids[edge.contigId].first;
+  std::string& tobeMerged = newSegs[id].get_seq();// new2seqAoldids[id].first;
+  std::string& seq = newSegs[edge.contigId].get_seq();// new2seqAoldids[edge.contigId].first;
   if (edge.baseSign() != edge.neighborSign()) {
     tobeMerged = util::revcomp(tobeMerged);
     //				if (tobeMerged.substr(tobeMerged.size()-(k-1)) != seq.substr(0,
@@ -242,37 +250,30 @@ void GFAConverter::mergeIn(pufg::Node& n) {
     //std::cerr << "2 " << seq << "\n" << tobeMerged << "\n";
     seq += tobeMerged.substr(k - 1);
   }
-  //		if (edge.contigId == "00125208939" or edge.contigId == "00225208939"
-  //or edge.contigId == "00325208939")
-  //				std::cerr << id << " is merged in with " << edge.contigId <<
-  //" seq:" << seq << "\n";
-  //		if (id == "00125208939" or id == "00225208939" or id ==
-  //"00325208939")
-  //				std::cerr << id << " is merged in with " << edge.contigId <<
-  //" seq:" << seq << "\n";
   eraseFromOldList(id);
-  new2seqAoldids.erase(id);
+  newSegs[id].disregard();
   semiCG.removeNode(id);
-  if (is_start(id))
+  if (newSegs[id].is_start())
     update_start(edge.contigId, edge.baseSign() == edge.neighborSign());
-  if (is_end(id))
+  if (newSegs[id].is_end())
     update_end(edge.contigId, edge.baseSign() == edge.neighborSign());
-  //		return edge.contigId;
 }
 
 void GFAConverter::mergeOut(pufg::Node& n) {
   uint64_t id = n.getId();
   pufg::edgetuple& edge = n.getOnlyRealOut();
-  if (!new2seqAoldids.contains(id)) {
+ //  if (!new2seqAoldids.contains(id)) {
+	if (!newSegs[id].is_valid()) {
     std::cerr << "[mergeOut] NO; the id " << id
               << " was not in new2seqAoldids!\n";
   }
-  if (!new2seqAoldids.contains(edge.contigId)) {
+//  if (!new2seqAoldids.contains(edge.contigId)) {
+	if (!newSegs[edge.contigId].is_valid()) {
     std::cerr << "[mergeOut] NO; the edge.contigId " << edge.contigId
               << " was not in new2seqAoldids!\n";
-  }
-  std::string& tobeMerged = new2seqAoldids[id].first;
-  std::string& seq = new2seqAoldids[edge.contigId].first;
+  } 
+  std::string& tobeMerged =  newSegs[id].get_seq();//new2seqAoldids[id].first;
+  std::string& seq = newSegs[edge.contigId].get_seq();// new2seqAoldids[edge.contigId].first;
   if (edge.baseSign() != edge.neighborSign()) {
     tobeMerged = util::revcomp(tobeMerged);
     //				if (tobeMerged.substr(0, k-1) != seq.substr(seq.size() - (k-1)))
@@ -293,11 +294,14 @@ void GFAConverter::mergeOut(pufg::Node& n) {
   //				std::cerr << id << " is merged out with " << edge.contigId
   //<< " seq:" << seq << "\n";
   eraseFromOldList(id);
-  new2seqAoldids.erase(id);
+  newSegs[id].disregard();
+  //new2seqAoldids.erase(id);
   semiCG.removeNode(id);
-  if (is_start(id))
+//  if (is_start(id))
+  if (newSegs[id].is_start())
     update_start(edge.contigId, edge.baseSign() == edge.neighborSign());
-  if (is_end(id))
+//  if (is_end(id))
+  if (newSegs[id].is_end())
     update_end(edge.contigId, edge.baseSign() == edge.neighborSign());
   //		return edge.contigId;
 }
@@ -310,8 +314,9 @@ void GFAConverter::mergeOut(pufg::Node& n) {
  */
 bool GFAConverter::isCornerCase(pufg::Node& n, bool mergeIn) {
   if (mergeIn) {
-    if (is_start(n.getId()))
-      return true;
+		  if (newSegs[n.getId()].is_start()) return true;
+/*    if (is_start(n.getId()))
+      return true;*/
     pufg::edgetuple& edge = n.getOnlyRealIn();
     if (edge.contigId == n.getId())
       return true;
@@ -319,12 +324,15 @@ bool GFAConverter::isCornerCase(pufg::Node& n, bool mergeIn) {
     // if ( (edge.baseSign and edge.neighborSign) or (!edge.baseSign and !
     // edge.neighborSign) )
     if (edge.baseSign() == edge.neighborSign()) {
-      return is_end(edge.contigId) or neighbor.getRealOutdeg() != 1;
+//      return is_end(edge.contigId) or neighbor.getRealOutdeg() != 1;
+      return newSegs[edge.contigId].is_end() or neighbor.getRealOutdeg() != 1;
     } else
-      return is_start(edge.contigId) or neighbor.getRealIndeg() != 1;
+//      return is_start(edge.contigId) or neighbor.getRealIndeg() != 1;
+      return newSegs[edge.contigId].is_start() or neighbor.getRealIndeg() != 1;
   } else { // Merge out case
-    if (is_end(n.getId()))
-      return true;
+		if (newSegs[n.getId()].is_end()) return true;
+/*    if (is_end(n.getId()))
+      return true;*/
     pufg::edgetuple& edge = n.getOnlyRealOut();
     if (edge.contigId == n.getId())
       return true;
@@ -332,15 +340,18 @@ bool GFAConverter::isCornerCase(pufg::Node& n, bool mergeIn) {
     // if ( (edge.baseSign and edge.neighborSign) or (!edge.baseSign and !
     // edge.neighborSign) ) {
     if (edge.baseSign() == edge.neighborSign()) {
-      return is_start(edge.contigId) or neighbor.getRealIndeg() != 1;
+//      return is_start(edge.contigId) or neighbor.getRealIndeg() != 1;
+      return newSegs[edge.contigId].is_start() or neighbor.getRealIndeg() != 1;
+
     } else {
-      return is_end(edge.contigId) or neighbor.getRealOutdeg() != 1;
+//      return is_end(edge.contigId) or neighbor.getRealOutdeg() != 1;
+      return newSegs[edge.contigId].is_end() or neighbor.getRealOutdeg() != 1;
     }
   }
   return false;
 }
 
-bool GFAConverter::is_start(uint64_t& nodeId) {
+/*bool GFAConverter::is_start(uint64_t& nodeId) {
   if (pathStart.find(std::make_pair(nodeId, true)) != pathStart.end() or
       pathEnd.find(std::make_pair(nodeId, false)) != pathEnd.end())
     return true;
@@ -352,26 +363,37 @@ bool GFAConverter::is_end(uint64_t& nodeId) {
       pathEnd.find(std::make_pair(nodeId, true)) != pathEnd.end())
     return true;
   return false;
-}
+}*/
 
 void GFAConverter::update_start(uint64_t& newId, bool newOri) {
-  pathStart[std::make_pair(newId, newOri)] = true;
-  pathEnd[std::make_pair(newId, !newOri)] = true;
+		if (newOri) newSegs[newId].set_start();
+		else newSegs[newId].set_end();
+//  pathStart[std::make_pair(newId, newOri)] = true;
+//  pathEnd[std::make_pair(newId, !newOri)] = true;
 }
 
 void GFAConverter::update_end(uint64_t& newId, bool newOri) {
-  pathStart[std::make_pair(newId, !newOri)] = true;
-  pathEnd[std::make_pair(newId, newOri)] = true;
+		if (newOri) newSegs[newId].set_end();
+		else newSegs[newId].set_start();
+//  pathStart[std::make_pair(newId, !newOri)] = true;
+//  pathEnd[std::make_pair(newId, newOri)] = true;
 }
 
 void GFAConverter::writeFile(const char* gfaFileName) {
 
   std::ofstream gfa_file(gfaFileName);
   uint32_t contigCntr = 0;
-  for (auto& kv : new2seqAoldids) {
+  /*for (auto& kv : new2seqAoldids) {
     gfa_file << "S"
              << "\t" << kv.first << "\t" << (kv.second).first << "\n";
     contigCntr++;
+  }*/
+  for (size_t i = 0; i < newSegs.size(); i++) {
+  	if (newSegs[i].is_valid()) {
+		gfa_file << "S"
+				<< "\t" << i << "\t" << newSegs[i].get_seq() << "\n";
+		contigCntr++;
+	}
   }
   for (auto& p : path) {
     auto tid = p.first;

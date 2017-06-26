@@ -17,18 +17,63 @@
 #include <sstream>
 #include <vector>
 
+enum class BoundaryType: uint8_t {
+	STARTER = 0,
+	TERMINATOR = 1,
+	BOTH = 2,
+	NONE = 3
+};
+
+
+struct SegInfo {
+	SegInfo(std::string seqIn) : seq(seqIn) {
+		boundaryType = BoundaryType::NONE; //is neither start nor end
+	}
+	void add_oldId(uint64_t oldId, bool ori) {
+		oldIds.emplace_back(oldId, ori);
+	}
+	void set_start() {
+			if (boundaryType == BoundaryType::NONE) 
+				boundaryType = BoundaryType::STARTER;
+			else if (boundaryType == BoundaryType::TERMINATOR)
+				boundaryType = BoundaryType::BOTH;			
+	}
+	void set_end() {
+			if (boundaryType == BoundaryType::NONE)
+					boundaryType = BoundaryType::TERMINATOR;
+			else if (boundaryType == BoundaryType::STARTER)
+					boundaryType = BoundaryType::BOTH;
+	}
+	bool is_start() {return boundaryType == BoundaryType::STARTER or boundaryType == BoundaryType::BOTH;}
+	bool is_end() {return boundaryType == BoundaryType::TERMINATOR or boundaryType == BoundaryType::BOTH;}
+
+	void disregard() {
+		seq = "";
+		oldIds.clear();
+	}
+	bool is_valid() {return seq != "";}
+	std::vector<std::pair<uint64_t, bool> >& get_oldIds() {return oldIds;}
+	std::string& get_seq() {return seq;}
+	std::string seq;
+	BoundaryType boundaryType;
+	std::vector<std::pair<uint64_t, bool> > oldIds;
+};
+
 class GFAConverter {
 private:
+  std::string filename_;
   std::unique_ptr<zstr::ifstream> file;
   size_t k;
   struct Contig {
     std::string seq;
     std::string id;
   };
-  spp::sparse_hash_map<
+
+  std::vector<SegInfo> newSegs;
+/*  spp::sparse_hash_map<
       uint64_t,
       std::pair<std::string, std::vector<std::pair<uint64_t, bool>>>>
-      new2seqAoldids;
+      new2seqAoldids;*/
   std::vector<uint64_t> ksizeContig;
   spp::sparse_hash_map<uint64_t, std::vector<std::pair<uint64_t, bool>>>
       old2newids;
@@ -37,8 +82,8 @@ private:
   spp::sparse_hash_map<std::string, std::vector<std::pair<uint64_t, bool>>>
       path;
 
-  std::map<std::pair<uint64_t, bool>, bool, util::cmpByPair> pathStart;
-  std::map<std::pair<uint64_t, bool>, bool, util::cmpByPair> pathEnd;
+//  std::map<std::pair<uint64_t, bool>, bool, util::cmpByPair> pathStart;
+//  std::map<std::pair<uint64_t, bool>, bool, util::cmpByPair> pathEnd;
 
   pufg::Graph semiCG;
 
