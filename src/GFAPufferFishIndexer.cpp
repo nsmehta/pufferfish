@@ -261,6 +261,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 
   sdsl::int_vector<> posVec(tlen, 0, w);
   //fill up normal posVec
+  /*
   {
     size_t i = 0;
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
@@ -285,13 +286,16 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
       }
 #endif
     }
-  }
+  }*/
   //calculate the exact size of
   //the sample vector
    int sampleSize = 5;
    int extensionSize = 4 ;
    size_t sampledKmers{0};
+
+
    std::vector<uint32_t> startSamplePositions ;
+   //track start positions
    {
  	  auto& cnmap = pf.getContigNameMap() ;
  	  for(auto& kv : cnmap){
@@ -311,47 +315,29 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   //in the way we thought we stored them
   //need these two to fetch
 
+  //feel up the canonicalNess vector
   sdsl::int_vector<> auxInfo((numKmers-sampledKmers),0,3*extensionSize) ;
+  sdsl::bit_vector direction(numKmers - sampledKmers) ;
   sdsl::int_vector<> samplePosVec(sampledKmers, 0, w);
+  
   {
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
     ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
     for(;kb1!=ke1;++kb1){
-        my_mer r;
-        r.word__(0) = *kb1;
-        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
-        if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
-        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT"){
-            std::cerr << "the kmer is "<<r.to_str()<< "\n" ;
-            std::cerr << "canonical ness "<<kb1.isCanonical() << "\n" ;
-         //   std::exit(1);
-        }
     	auto idx = bphf->lookup(*kb1) ;
     	canonicalNess[idx] = kb1.isCanonical() ;
     }
   }
 
+  //fill up the presenceVec 
   {
-	size_t i = 0 ;
+    size_t i = 0 ;
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
     ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
     size_t contigId{0};
     int sampleCounter = 0 ;
     while(kb1 != ke1){
     	auto startPosition = startSamplePositions[contigId] ;
-
-    //debug -deleted later
-
-        my_mer r;
-        r.word__(0) = *kb1;
-        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
-        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
-        if(r.to_str() == "ACACGGTCTGGACCCGGTCCACGGACTCTAA" or r.to_str() == "TTAGAGTCCGTGGACCGGGTCCAGACCGTGT"){
-            std::cerr << "the kmer is "<<r.to_str()<< "\n" ;
-            std::cerr << "start pos " << startPosition <<"\n" ;
-            std::cerr << "is end "<<kb1.isEndKmer() << "\n" ;
-        }
-
 
     	contigId++;
     	uint32_t skip = 0;
@@ -383,7 +369,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
 
   }
 //debug block -- will remove later
-
+/*
   {
     ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
     ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
@@ -413,9 +399,236 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     }
 
   }
-
+*/
   sdsl::bit_vector::rank_1_type realPresenceRank(&presenceVec) ;
   sdsl::bit_vector::select_1_type realPresenceSelect(&presenceVec) ;
+
+  //bidirectional sampling
+  /*
+  {
+    ContigKmerIterator kb1(&seqVec, &rankVec, k, 0);
+    ContigKmerIterator ke1(&seqVec, &rankVec, k, seqVec.size() - k + 1);
+    int contigId = 0;
+
+    //The plan is to traverse a contig at once
+    //and not completeing one iteration of the while loop
+    // unledd a contig is fully explored.
+
+    while(kb1 != ke1){
+
+        auto kbStart = kb1 ;
+        auto startPosition = startSamplePositions[contigId] ;
+        contigId++ ;
+        //sample until start position
+        uint32_t skip = 0;
+        uint32_t extendNucl ;
+        uint32_t prependNucl ;
+
+        while(skip < startPosition) {skip++;kb1++} ;
+
+        if(skip > 0){
+          extendNucl = seqVec.get_int(2*kbStart.pos() + 2*k, 2*skip) ;
+          uint32_t appendNucl = extendNucl & 0x3 ;
+          extendNucl = extendNucl >> 2 ;
+          for(j = 1 ; j < skip; ++j){
+            appendNucl = appendNucl << 3 ;
+            appendNucl = appendNucl | (extendNucl & 0x3) ;
+            extendNucl = extendNucl >> 2 ;
+          }
+          bool delm = false ;
+          auto rawAppendNucl = appendNucl ;
+
+          if(skip < extensionSize){
+            delm = true ;
+            appendNucl = appendNucl << 3 ;
+            appendNucl = appendNucl | 0x4 ;
+          }
+          //pad it more in case it is notFound
+
+          int e2 = skip + 1 ;
+          while(e2 < extensionSize){
+            appendNucl = appendNucl << 3 ;
+            e2++;
+          }
+
+          //add for the first extension 
+          {
+            auto tidx = bphf->lookup(*kbStart);
+            auto trank = realPresenceRank(tidx);
+            auxInfo[tidx - trank] = appendNucl ;
+            direction[tidx - trank] = 1 ;
+            kbStart++ ;
+
+          }
+          
+          while(kbStart != kb1){
+            auto tidx = bphf->lookup(*kbStart) ;
+            auto trank = realPresenceRank(tidx) ;
+            skip = skip - 1;
+            rawAppendNucl = rawAppendNucl >> 3 ;
+            auto thisAppendNucl = rawAppendNucl ;
+            thisAppendNucl = thisAppendNucl << 3 ;
+            thisAppendNucl = thisAppendNucl | 0x4 ;
+            int e3 = skip + 1 ;
+            while(e3 < extensionSize){
+              thisAppendNucl = thisAppendNucl << 3 ;
+              e3++ ;
+            }
+            auxInfo[tidx - trank] = thisAppendNucl ;
+            direction[tidx - trank] = 1 ;
+            kbStart++ ;
+          }
+        }
+
+        //I will end up in this while loop
+        //If we are between two presenceVec bits 
+        auto kbStampS = kb1 ; //start of one presenceVec bit
+        auto kbStampE = kb1 ; //start of next presenceVec bit
+        auto kbStampN = kb1 ; //next start of extension 
+        while(!kb1.isEndKmer()){
+          //this is definitely not the start position
+          auto idx = bphf->lookup(*kb1) ;
+          auto rank = realPresenceRank(idx) ;
+
+
+          if(presenceVec[idx] == 1){
+            samplePosVec[rank] = kb1.pos() ;
+            kbStartS = kb1 ;
+            kb1++ ;
+          }else{
+            //find out the next presenceVec
+            //skip until that
+            //last presenceVec bit is stored in kbStartS
+
+            auto kbIt = kb1 ;
+            int extendLength = 0;
+            while(extendLength < extensionSize){
+              auto tidx = bphf->lookup(*kb1) ;
+              if(kb1.isEndKmer())
+                break ;
+              if(presenceVec[tidx] == 1)
+                break;
+              extendLength++ ;
+              kb1++ ;
+            }
+
+            if(extendLength > 3){
+              auto halfWay = extendLength/2 ;
+              auto otherHalf = extendLength - halfWay ;
+
+              int m=0;
+              kbStampN = kbIt ;
+              while(m < halfWay){
+                kbStampN++;
+                m++;
+              }
+
+
+              int ite = 0 ;
+              while(ite < halfWay){
+                prependNucl = seqVec(2*kbStartS.pos(), 2*(ite+1)) ;
+                int inIte = ite ;
+                {
+                  uint32_t appendNucl = prependNucl & 0x3 ;
+                  prependNucl = prependNucl >> 2 ;
+                  for(j = 1 ; j <= ite; ++j){
+                    appendNucl = appendNucl << 3 ;
+                    appendNucl = appendNucl | (prependNucl & 0x3) ;
+                    prependNucl = prependNucl >> 2 ;
+                  }
+                  if(ite < extensionSize){
+                    appendNucl = appendNucl << 3 ;
+                    appendNucl = appendNucl | 0x4 ;
+                  }
+                  int e2 = ite + 2 ;
+                  while(e2 < extensionSize){
+                    appendNucl = appendNucl << 3 ;
+                    e2++;
+                  }
+
+                  auxInfo[tidx - trank] = thisAppendNucl ;
+                  direction[tidx - trank] = 1 ;
+
+                }
+              }
+
+              // extendNucl = seqVec.get_int(2*kbStampN.pos() + 2*k, 2*otherhalf) ;
+
+              
+
+
+            }
+
+            if(extendLength > 0 and extendLength <= 3){
+              //I will go half way for back word
+
+              extendNucl = seqVec.get_int(2*kbIt.pos() + 2*k, 2*extendLength) ;
+              uint32_t appendNucl = extendNucl & 0x3 ;
+              extendNucl = extendNucl >> 2 ;
+              for(j = 1 ; j < extendLength; ++j){
+                appendNucl = appendNucl << 3 ;
+                appendNucl = appendNucl | (extendNucl & 0x3) ;
+                extendNucl = extendNucl >> 2 ;
+              }
+              bool delm = false ;
+              auto rawAppendNucl = appendNucl ;
+
+              if(extendLength < extensionSize){
+                delm = true ;
+                appendNucl = appendNucl << 3 ;
+                appendNucl = appendNucl | 0x4 ;
+              }
+              //pad it more in case it is notFound
+
+              int e2 = extendLength + 1 ;
+              while(e2 < extensionSize){
+                appendNucl = appendNucl << 3 ;
+                e2++;
+              }
+
+              //add for the first extension 
+              {
+                auto tidx = bphf->lookup(*kbStart);
+                auto trank = realPresenceRank(tidx);
+                auxInfo[tidx - trank] = appendNucl ;
+                direction[tidx - trank] = 1 ;
+                kbStart++ ;
+              }
+
+              while(kbStart != kb1){
+                auto tidx = bphf->lookup(*kbStart) ;
+                auto trank = realPresenceRank(tidx) ;
+                extendLength = extendLength - 1;
+                rawAppendNucl = rawAppendNucl >> 3 ;
+                auto thisAppendNucl = rawAppendNucl ;
+                thisAppendNucl = thisAppendNucl << 3 ;
+                thisAppendNucl = thisAppendNucl | 0x4 ;
+                int e3 = extendLength + 1 ;
+                while(e3 < extensionSize){
+                  thisAppendNucl = thisAppendNucl << 3 ;
+                  e3++ ;
+                }
+                auxInfo[tidx - trank] = thisAppendNucl ;
+                direction[tidx - trank] = 1 ;
+                kbStart++ ;
+              }
+            }
+
+          }
+        }
+
+        if(kb1.isEndKmer()){
+          auto idx = bphf->lookup(*kb1) ;
+          auto rank = realPresenceRank(idx) ;
+          samplePosVec[rank] = kb1.pos() ;
+          kb1++ ;
+        }
+    }
+
+
+  }
+  */
+
 
   {
     size_t i = 0;
@@ -429,18 +642,10 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
     	auto idx = bphf->lookup(*kb1) ;
     	auto rank = realPresenceRank(idx) ;
 
-        my_mer r;
-        r.word__(0) = *kb1;
-        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
-        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
-        if(r.to_str() == "ACACGGTCTGGACCCGGTCCACGGACTCTAA" or r.to_str() == "TTAGAGTCCGTGGACCGGGTCCAGACCGTGT"){
-            std::cerr << "the kmer found:  "<<r.to_str() << "\n" ;
-            std::cerr << " canonicalness: " << canonicalNess[idx] << "\n";
-        }
         if(presenceVec[idx] == 1){
-			  if (idx >= posVec.size()) {
+			  if (idx >= presenceVec.size()) {
 				std::cerr << "i =  " << i << ", size = " << seqVec.size()
-						  << ", idx = " << idx << ", size = " << posVec.size() << "\n";
+						  << ", idx = " << idx << ", size = " << presenceVec.size() << "\n";
 			  }
 
 #ifdef PUFFER_DEBUG
@@ -508,22 +713,6 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
                 std::cout<<"appended bits "<<ext2<<"\n" ;
                 std::exit(1) ;
                 */
-//#ifdef PUFFER_DEBUG
-      //uint64_t kn = seqVec.get_int(2 * kb1.pos(), 2 * k);
-        my_mer r;
-        r.word__(0) = *kbIt;
-        //if(r.to_str() == "TGAGAATCAGAGAGACCCAGAAAAATGAATT" or r.to_str() == "TTAAGTAAAAAGACCCAGAGAGACTAAGAGT" or r.to_str() == "ACTCTTAGTCTCTCTGGGTCTTTTTACTTAA" or r.to_str() == "AATTCATTTTTCTGGGTCTCTCTGATTCTCA"){
-        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT" or r.to_str() == "TGACTGAATTCATTTTTCTGGGTCTCTCTGA" or r.to_str() == "ACTGACTTAAGTAAAAAGACCCAGAGAGACT" or r.to_str() == "TCAGAGAGACCCAGAAAAATGAATTCAGTCA"){
-        //if(r.to_str() == "AGTCTCTCTGGGTCTTTTTACTTAAGTCAGT"){
-        if(r.to_str() == "ACACGGTCTGGACCCGGTCCACGGACTCTAA" or r.to_str() == "TTAGAGTCCGTGGACCGGGTCCAGACCGTGT"){
-            std::cerr << "the kmer is "<<r.to_str()<< "\n" ;
-            std::bitset<32> ext2(appendNucl) ;
-            std::cerr << " ext "<<ext2 << "\n" ;
-         //   std::exit(1);
-        }
-
-
-//#endif
                 if(extendNucl1 != 0x0 and appendNucl == 0x0){
                     std::cerr<<"this should not happen\n";
                 }
