@@ -34,6 +34,7 @@ private:
   //for sparse representation
   sdsl::bit_vector presenceVec_;
   sdsl::bit_vector canonicalNess_;
+  sdsl::bit_vector directionVec_ ;
   sdsl::bit_vector::rank_1_type presenceRank_;
   sdsl::bit_vector::select_1_type presenceSelect_;
   sdsl::int_vector<> auxInfo_ ;
