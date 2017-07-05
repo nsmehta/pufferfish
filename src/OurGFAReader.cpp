@@ -94,7 +94,6 @@ void PosFinder::parseFile() {
       path[ref_cnt] = contigVec;
       refMap.push_back(id);
       ref_cnt++;
-
 	  maxTxpKmerCnt_ = std::max(contigVec.size()-k+1, maxTxpKmerCnt_);
 	  for (auto& c : contigVec) {
 		  contigid2seq[c.first].txpCnt++;	
@@ -121,30 +120,38 @@ void PosFinder::mapContig2Pos() {
   uint64_t currContigLength = 0;
   uint64_t total_output_lines = 0;
   
-  size_t contigOffsetlen = log(contigid2seq[contigid2seq.size()-1].offset);
-  size_t txpIdWlen = totalnTxp_*log(path.size());
-  size_t txpPosWlen = totalnTxp_*log(maxTxpKmerCnt_);
+  size_t contigOffsetlen = std::log2(totalnTxp_);
+  size_t txpIdWlen = std::log2(path.size());
+  size_t txpPosWlen = std::log2(maxTxpKmerCnt_);
 
+  std::cerr << "total number of transcripts " << totalnTxp_ << "\n";
   contigOffset = sdsl::int_vector<>(contigid2seq.size(), 0, contigOffsetlen);
   txpID = sdsl::int_vector<>(totalnTxp_, 0, txpIdWlen);
   txpPos = sdsl::int_vector<>(totalnTxp_, 0, txpPosWlen);
   contigOri = sdsl::bit_vector(totalnTxp_, 0);
 
   uint64_t offset{0};
-  for (size_t i = 0; i < contigid2seq.size(); i++) {
+  std::cerr << "contig offset size: " << contigOffset.size() << " width: " << contigOffsetlen << "\n";
+  std::cerr << "totalnTxp_: " << totalnTxp_ << " txpIdWlen: " << txpIdWlen << " txpPosWlen: " << txpPosWlen << "\n";
+  size_t i = 0;
+  spp::sparse_hash_map<uint64_t, uint64_t> contigid2idx;
+  for (auto& kv : contigid2seq) {		  
 		  contigOffset[i] = offset;
-		  offset += contigid2seq[i].txpCnt;
+		  offset += contigid2seq[kv.first].txpCnt;
+		  contigid2idx[kv.first] = i;
+		  i++;
+          total_output_lines += 1;
   }
-
+  std::cerr << " " << total_output_lines << " " << contigid2seq.size() << "\n";
   for (auto const& ent : path) {
     const uint64_t& tr = ent.first;
     const std::vector<std::pair<uint64_t, bool>>& contigs = ent.second;
     accumPos = 0;
     for (size_t i = 0; i < contigs.size(); i++) {
-      if (contig2pos.find(contigs[i].first) == contig2pos.end()) {
+/*      if (contig2pos.find(contigs[i].first) == contig2pos.end()) {
         contig2pos[contigs[i].first] = {};
         total_output_lines += 1;
-      }
+      }*/
       if (contigid2seq.find(contigs[i].first) == contigid2seq.end()) {
         std::cerr << "ERROR: Couldn't find the contig in the path : " << contigs[i].first << "\n";
       }
@@ -153,11 +160,12 @@ void PosFinder::mapContig2Pos() {
       accumPos += currContigLength - k;
 //      (contig2pos[contigs[i].first])
 //          .push_back(util::Position(tr, pos, contigs[i].second));
-	  size_t idx = contigOffset[contigs[i].first]+contigid2seq[i].txpCnt-1;
+	  size_t offsetIdx = contigid2idx[contigs[i].first];
+	  size_t idx = contigOffset[offsetIdx]+contigid2seq[contigs[i].first].txpCnt-1;
 	  txpID[idx] = tr;
 	  txpPos[idx] = pos;
 	  contigOri[idx] = 1;
-	  contigid2seq[i].txpCnt--;
+	  contigid2seq[contigs[i].first].txpCnt--;
     }
   }
   std::cerr << "\nTotal # of segments we have position for : "
@@ -167,6 +175,10 @@ void PosFinder::mapContig2Pos() {
 void PosFinder::clearContigTable() {
   refMap.clear();
   contig2pos.clear();
+  sdsl::util::clear(contigOffset);
+  sdsl::util::clear(txpID);
+  sdsl::util::clear(txpPos);
+  sdsl::util::clear(contigOri);
 }
 
 // Note : We assume that odir is the name of a valid (i.e., existing) directory.
@@ -184,10 +196,15 @@ void PosFinder::serializeContigTable(const std::string& odir) {
     std::vector<std::string> refNames;
     refNames.reserve(refMap.size());
     for (size_t i = 0; i < refMap.size(); ++i) {
-      refNames.push_back(refMap[i]);
+     	refNames.push_back(refMap[i]);
     }
     ar(refNames);
+	sdsl::store_to_file(contigOffset, odir + "/contigOffset.bin");
+	sdsl::store_to_file(txpID, odir + "/txpID.bin");
+	sdsl::store_to_file(txpPos, odir + "/txpPos.bin");
+	sdsl::store_to_file(contigOri, odir + "/contigOri.bin");
 
+/*
     class VecHasher {
     public:
       size_t operator()(const std::vector<uint32_t>& vec) const {
@@ -198,10 +215,10 @@ void PosFinder::serializeContigTable(const std::string& odir) {
 
     spp::sparse_hash_map<std::vector<uint32_t>, uint32_t, VecHasher> eqMap;
     std::vector<uint32_t> eqIDs;
-    std::vector<std::vector<util::Position>> cpos;
+    //std::vector<std::vector<util::Position>> cpos;
 
     for (auto& kv : contigid2seq) {
-      cpos.push_back(contig2pos[kv.first]);
+      //cpos.push_back(contig2pos[kv.first]);
       std::vector<uint32_t> tlist;
       for (auto& p : contig2pos[kv.first]) {
         tlist.push_back(p.transcript_id());
@@ -230,8 +247,8 @@ void PosFinder::serializeContigTable(const std::string& odir) {
                   const std::vector<uint32_t>& l2) -> bool {
                 return eqMap[l1] < eqMap[l2];
               });
-    eqAr(eqLabels);
-    ar(cpos);
+    eqAr(eqLabels);*/
+    //ar(cpos);
   }
 }
 
