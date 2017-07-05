@@ -34,6 +34,13 @@ private:
   std::vector<std::string> refMap;
   sdsl::int_vector<2> seqVec_;
 
+  size_t maxTxpKmerCnt_{0};
+  size_t totalnTxp_{0};
+  sdsl::int_vector<> contigOffset;
+  sdsl::int_vector<> txpID;
+  sdsl::int_vector<> txpPos;
+  sdsl::bit_vector contigOri;
+
   size_t fillContigInfoMap_();
   void encodeSeq(sdsl::int_vector<2>& seqVec, size_t offset,
                  stx::string_view str);

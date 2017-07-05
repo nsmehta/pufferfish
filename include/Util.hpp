@@ -250,6 +250,7 @@ struct PackedContigInfo {
   size_t fileOrder;
   size_t offset;
   uint32_t length;
+  uint32_t txpCnt;
 };
   
 struct RefPos {
