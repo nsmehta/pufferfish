@@ -9,6 +9,7 @@
 #include <sstream>
 #include <type_traits>
 #include <vector>
+#include "sdsl/int_vector.hpp"
 
 #include "cereal/types/string.hpp"
 #include "cereal/types/vector.hpp"
@@ -230,6 +231,75 @@ private:
   // uint32_t orientMask_
 };
 
+//SOA implementation of AOS for Position
+struct Positions {
+  sdsl::int_vector<> contigOffset;
+  sdsl::int_vector<> refID;
+  sdsl::int_vector<> inRefPos;
+  sdsl::bit_vector inRefOri;
+
+  std::vector<Position> posList;
+
+  Positions(size_t contigOffsetSize, size_t contigOffsetLen, size_t refSize, size_t refIdWLen, size_t refPosWLen) {
+	contigOffset = sdsl::int_vector<>(contigOffsetSize, 0, contigOffsetLen);
+	refID = sdsl::int_vector<>(refSize, 0, refIdWLen);
+	inRefPos = sdsl::int_vector<>(refSize, 0, refPosWLen);
+	inRefOri = sdsl::bit_vector(refSize, 0);
+  }
+
+  Positions() {}
+
+  inline void addPosition(size_t contigId, uint32_t refOffset, size_t refId, size_t refPos, bool refOri, bool show = false) {		  
+
+  	size_t idx = contigOffset[contigId] + refOffset-1;
+	refID[idx] = refId;
+	inRefPos[idx] = refPos;
+	inRefOri[idx] = refOri;
+  }
+
+  inline void setOffset(size_t& contigIdx, size_t& offset) {contigOffset[contigIdx] = offset;}
+
+  inline size_t size() {return contigOffset.size();}
+
+  std::vector<Position>& getPosList(size_t contigRank) {
+		  posList.clear();
+		  size_t offset = contigOffset[contigRank];
+		  size_t nextOffset;
+		  if (contigRank+1 < contigOffset.size())
+		  	nextOffset = contigOffset[contigRank+1];
+		  else
+			nextOffset = refID.size();
+		  for (size_t i = offset; i < nextOffset; i++)
+				  posList.push_back(Position(refID[i], inRefPos[i], inRefOri[i]));
+		  return posList;
+  }
+  void loadFromDir(const std::string& odir) {
+    sdsl::load_from_file(contigOffset, odir + "/contigOffset.bin");
+    sdsl::load_from_file(refID, odir + "/refID.bin");
+    sdsl::load_from_file(inRefPos, odir + "/refPos.bin");
+    sdsl::load_from_file(inRefOri, odir + "/refOri.bin"); 
+	std::cerr << "contigoffset len " << contigOffset.size() << "\n";
+	std::cerr << "ref len " << refID.size() << "\n";
+	std::cerr << "pos len " << inRefPos.size() << "\n";
+	std::cerr << "ori len " << inRefOri.size() << "\n";
+ }
+
+  void saveToDir(const std::string& odir) {
+    sdsl::store_to_file(contigOffset, odir + "/contigOffset.bin");
+    sdsl::store_to_file(refID, odir + "/refID.bin");
+    sdsl::store_to_file(inRefPos, odir + "/refPos.bin");
+    sdsl::store_to_file(inRefOri, odir + "/refOri.bin"); 
+  }
+
+  void clear() {
+    sdsl::util::clear(contigOffset);
+	sdsl::util::clear(refID);
+	sdsl::util::clear(inRefPos);
+	sdsl::util::clear(inRefOri);
+  }
+
+};
+
 struct QueryCache {
   uint64_t prevRank;
   uint64_t contigStart;
@@ -274,6 +344,7 @@ struct ProjectedHits {
   inline bool empty() { return refRange.empty(); }
 
   inline RefPos decodeHit(util::Position& p) {
+//		  std::cerr<< " pos " << p.pos() << " ori " << p.orientation() << " " ;
     // true if the contig is fowrard on the reference
     bool contigFW = p.orientation();
     // we are forward with respect to the reference if :

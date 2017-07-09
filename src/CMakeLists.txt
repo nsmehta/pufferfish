@@ -14,7 +14,7 @@ add_executable(pufferize Pufferizer.cpp)
 target_link_libraries(pufferfish z puffer sdsl)
 target_link_libraries(fixFasta z)
 target_link_libraries(myGFAtester z sdsl puffer)
-target_link_libraries(pufferize z puffer)
+target_link_libraries(pufferize z sdsl puffer)
 #target_link_libraries(myGraphtester puffer)
 
 

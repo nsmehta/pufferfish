@@ -32,19 +32,20 @@ PufferfishIndex::PufferfishIndex(const std::string& indexDir) {
     cereal::BinaryInputArchive contigTableArchive(contigTableStream);
     contigTableArchive(refNames_);
     // contigTableArchive(cPosInfo_);
-    contigTableArchive(contigTable_);
+	contigTable_.loadFromDir(indexDir);
+//	contigTableArchive(contigTable_);
     contigTableStream.close();
   }
   numContigs_ = contigTable_.size();
 
-  {
+/*  {
     CLI::AutoTimer timer{"Loading eq table", CLI::Timer::Big};
     std::ifstream eqTableStream(indexDir + "/eqtable.bin");
     cereal::BinaryInputArchive eqTableArchive(eqTableStream);
     eqTableArchive(eqClassIDs_);
     eqTableArchive(eqLabels_);
     eqTableStream.close();
-  }
+  }*/
 
   {
     CLI::AutoTimer timer{"Loading mphf table", CLI::Timer::Big};
@@ -139,7 +140,8 @@ auto PufferfishIndex::getRefPos(CanonicalKmer& mer, util::QueryCache& qc) -> uti
       // the index of this contig
       auto rank = contigRank_(pos);
       // the reference information in the contig table
-      auto& pvec = contigTable_[rank];
+      //auto& pvec = contigTable_[rank];
+      auto& pvec = contigTable_.getPosList(rank);
       // start position of this contig
       uint64_t sp = 0;
       uint64_t contigEnd = 0;
@@ -193,7 +195,8 @@ auto PufferfishIndex::getRefPos(CanonicalKmer& mer) -> util::ProjectedHits {
       // the index of this contig
       auto rank = contigRank_(pos);
       // the reference information in the contig table
-      auto& pvec = contigTable_[rank];
+      //auto& pvec = contigTable_[rank]; 
+      auto& pvec = contigTable_.getPosList(rank);
       // start position of this contig
       uint64_t sp = (rank == 0) ? 0 : static_cast<uint64_t>(contigSelect_(rank)) + 1;
       uint64_t contigEnd = contigSelect_(rank + 1);
@@ -227,9 +230,10 @@ uint32_t PufferfishIndex::k() { return k_; }
 /**
  * Return the position list (ref_id, pos) corresponding to a contig.
  */
-const std::vector<util::Position>&
+//const std::vector<util::Position>&
+const std::vector<util::Position>
 PufferfishIndex::refList(uint64_t contigRank) {
-  return contigTable_[contigRank];
+  return contigTable_.getPosList(contigRank);
 }
 
 const std::string& PufferfishIndex::refName(uint64_t refRank) {

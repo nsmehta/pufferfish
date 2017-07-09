@@ -27,7 +27,8 @@ private:
   std::vector<std::vector<uint32_t>> eqLabels_;
   std::vector<std::string> refNames_;
   // std::vector<util::ContigPosInfo> cPosInfo_;
-  std::vector<std::vector<util::Position>> contigTable_;
+//  std::vector<std::vector<util::Position>> contigTable_;
+  util::Positions contigTable_;
   uint64_t numContigs_{0};
   sdsl::bit_vector contigBoundary_;
   sdsl::bit_vector::rank_1_type contigRank_;
@@ -54,7 +55,7 @@ public:
   // Get the k value with which this index was built.
   uint32_t k();
   // Get the list of reference sequences & positiosn corresponding to a contig
-  const std::vector<util::Position>& refList(uint64_t contigRank);
+  const std::vector<util::Position> refList(uint64_t contigRank);
   // Get the name of a given reference sequence
   const std::string& refName(uint64_t refRank);
 

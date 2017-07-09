@@ -5,7 +5,6 @@
 #include "Util.hpp"
 #include "cereal/types/string.hpp"
 #include "cereal/types/vector.hpp"
-#include "sdsl/int_vector.hpp"
 #include "sparsepp/spp.h"
 #include "string_view.hpp"
 #include "zstr/zstr.hpp"
@@ -36,10 +35,7 @@ private:
 
   size_t maxTxpKmerCnt_{0};
   size_t totalnTxp_{0};
-  sdsl::int_vector<> contigOffset;
-  sdsl::int_vector<> txpID;
-  sdsl::int_vector<> txpPos;
-  sdsl::bit_vector contigOri;
+  util::Positions positions;
 
   size_t fillContigInfoMap_();
   void encodeSeq(sdsl::int_vector<2>& seqVec, size_t offset,
