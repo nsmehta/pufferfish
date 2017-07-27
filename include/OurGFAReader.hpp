@@ -53,6 +53,7 @@ public:
   void parseFile();
   void mapContig2Pos();
   void clearContigTable();
+  void serializeEqCls(const std::string& odir);
   void serializeContigTable(const std::string& odir);
 };
 

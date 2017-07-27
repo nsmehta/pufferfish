@@ -213,6 +213,7 @@ int pufferfishIndex(util::IndexOptions& indexOpts) {
   pf.parseFile();
   // std::exit(1);
   pf.mapContig2Pos();
+  pf.serializeEqCls(outdir);
   pf.serializeContigTable(outdir);
   pf.clearContigTable();
 

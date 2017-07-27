@@ -38,7 +38,8 @@ PufferfishSparseIndex::PufferfishSparseIndex(const std::string& indexDir) {
     std::ifstream contigTableStream(indexDir + "/ctable.bin");
     cereal::BinaryInputArchive contigTableArchive(contigTableStream);
     contigTableArchive(refNames_);
-    contigTableArchive(contigTable_);
+    //contigTableArchive(contigTable_);
+contigTable_.loadFromDir(indexDir);
     contigTableStream.close();
   }
   numContigs_ = contigTable_.size();
@@ -190,7 +191,8 @@ auto PufferfishSparseIndex::getRefPosHelper_(CanonicalKmer& mer, uint64_t pos, u
         return {std::numeric_limits<uint32_t>::max(), true, 0, k_, core::range<IterT>{}};
       }
       // the reference information in the contig table
-      auto& pvec = contigTable_[rank];
+      //auto& pvec = contigTable_[rank];
+	  auto& pvec = contigTable_.getPosList(rank);
       // start position of this contig
       uint64_t sp = 0;
       uint64_t contigEnd = 0;
@@ -252,7 +254,8 @@ auto PufferfishSparseIndex::getRefPosHelper_(CanonicalKmer& mer, uint64_t pos, b
       }
 
       // the reference information in the contig table
-      auto& pvec = contigTable_[rank];
+      //auto& pvec = contigTable_[rank];
+	  auto& pvec = contigTable_.getPosList(rank);
       // start position of this contig
       uint64_t sp = (rank == 0) ? 0 : static_cast<uint64_t>(contigSelect_(rank)) + 1;
       uint64_t contigEnd = contigSelect_(rank + 1);
@@ -461,7 +464,7 @@ uint32_t PufferfishSparseIndex::k() { return k_; }
  * Return the position list (ref_id, pos) corresponding to a contig.
  */
 const std::vector<util::Position>& PufferfishSparseIndex::refList(uint64_t contigRank) {
-  return contigTable_[contigRank];
+  return contigTable_.getPosList(contigRank);
 }
 
 const std::string& PufferfishSparseIndex::refName(uint64_t refRank) {

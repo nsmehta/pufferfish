@@ -38,14 +38,14 @@ PufferfishIndex::PufferfishIndex(const std::string& indexDir) {
   }
   numContigs_ = contigTable_.size();
 
-/*  {
+  {
     CLI::AutoTimer timer{"Loading eq table", CLI::Timer::Big};
     std::ifstream eqTableStream(indexDir + "/eqtable.bin");
     cereal::BinaryInputArchive eqTableArchive(eqTableStream);
     eqTableArchive(eqClassIDs_);
     eqTableArchive(eqLabels_);
     eqTableStream.close();
-  }*/
+  }
 
   {
     CLI::AutoTimer timer{"Loading mphf table", CLI::Timer::Big};

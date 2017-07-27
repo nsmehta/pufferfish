@@ -30,7 +30,7 @@ size_t PosFinder::fillContigInfoMap_() {
       auto nid = std::stoull(splited[1].to_string());
       (void)nid;
       auto clen = splited[2].length();
-      contigid2seq[nid] = {contig_ctr, 0, static_cast<uint32_t>(clen), 0};
+      contigid2seq[nid] = {contig_ctr, 0, static_cast<uint32_t>(clen), 0, {}};
       ++contig_ctr;
       // contigid2seq[id] = value;
       // contig_cnt++;
@@ -95,7 +95,6 @@ void PosFinder::parseFile() {
 
       path[ref_cnt] = contigVec;
       refMap.push_back(id);
-      ref_cnt++;
 	  size_t lastKmerPos = 0;
 	  for (auto& v: contigVec)
 		lastKmerPos += contigid2seq[v.first].length - k;
@@ -103,13 +102,63 @@ void PosFinder::parseFile() {
 
 	  for (auto& c : contigVec) {
 		  contigid2seq[c.first].txpCnt++;	
+		  contigid2seq[c.first].txp.insert(ref_cnt);
 		  totalnTxp_++;
 	  }
+      ref_cnt++;
     }
   }
   std::cerr << " Total # of Contigs : " << contig_cnt
             << " Total # of numerical Contigs : " << contigid2seq.size()
             << "\n\n";
+}
+
+void PosFinder::serializeEqCls(const std::string& odir) {
+   std::string eqfile = odir + "/eqtable.bin";
+   std::ofstream et(eqfile);
+   cereal::BinaryOutputArchive eqAr(et);
+   class VecHasher {
+    public:
+      size_t operator()(const std::vector<uint32_t>& vec) const {
+        return XXH64(const_cast<std::vector<uint32_t>&>(vec).data(),
+                     vec.size() * sizeof(decltype(vec.front())), 0);
+      }
+    };
+
+    spp::sparse_hash_map<std::vector<uint32_t>, uint32_t, VecHasher> eqMap;
+    std::vector<uint32_t> eqIDs;
+    //std::vector<std::vector<util::Position>> cpos;
+
+    for (auto& kv : contigid2seq) {
+	  std::vector<uint32_t> tlist;
+	  for (auto& v: kv.second.txp) {
+	  	tlist.push_back(v);
+	  }
+	  kv.second.txp.clear();
+      std::sort(tlist.begin(), tlist.end());
+      size_t eqID = eqMap.size();
+      if (eqMap.contains(tlist)) {
+        eqID = eqMap[tlist];
+      } else {
+        eqMap[tlist] = eqID;
+      }
+      eqIDs.push_back(eqID);
+    }
+    eqAr(eqIDs);
+    eqIDs.clear();
+    eqIDs.shrink_to_fit();
+    std::vector<std::vector<uint32_t>> eqLabels;
+    eqLabels.reserve(eqMap.size());
+    for (auto& kv : eqMap) {
+      eqLabels.push_back(kv.first);
+    }
+    std::sort(eqLabels.begin(), eqLabels.end(),
+              [&](const std::vector<uint32_t>& l1,
+                  const std::vector<uint32_t>& l2) -> bool {
+                return eqMap[l1] < eqMap[l2];
+              });
+    std::cerr << "There were " << eqLabels.size() << " equivalence classes\n";
+    eqAr(eqLabels);
 }
 
 // spp::sparse_hash_map<uint64_t, std::string>& PosFinder::getContigNameMap() {
@@ -157,11 +206,7 @@ void PosFinder::mapContig2Pos() {
       accumPos += currContigLength - k;
 	  if (accumPos == pos) std::cerr << "BAAAD : " << pos << "\n";
 	  size_t offsetIdx = contigid2idx[contigs[i].first];
-//	  if (contigs[i].first == 601346 or contigs[i].first == 927430 or contigs[i].first == 520452) {
-//		  std::cerr<< contigs[i].first<<"\t\t" <<tr<<", "<<pos<<", "<<contigs[i].second<<" in pos "<<offsetIdx<<" " <<contigid2seq[contigs[i].first].txpCnt-1<<"\n";
-//	  	positions.addPosition(offsetIdx, contigid2seq[contigs[i].first].txpCnt, tr, pos, contigs[i].second, true);
-//	  }
-	  	positions.addPosition(offsetIdx, contigid2seq[contigs[i].first].txpCnt, tr, pos, contigs[i].second, false);
+	  positions.addPosition(offsetIdx, contigid2seq[contigs[i].first].txpCnt, tr, pos, contigs[i].second);
 	  contigid2seq[contigs[i].first].txpCnt--;
     }
 
@@ -186,11 +231,8 @@ void PosFinder::clearContigTable() {
 // Note : We assume that odir is the name of a valid (i.e., existing) directory.
 void PosFinder::serializeContigTable(const std::string& odir) {
   std::string ofile = odir + "/ctable.bin";
-  std::string eqfile = odir + "/eqtable.bin";
   std::ofstream ct(ofile);
-  std::ofstream et(eqfile);
   cereal::BinaryOutputArchive ar(ct);
-  cereal::BinaryOutputArchive eqAr(et);
   {
     // We want to iterate over the contigs in precisely the
     // order they appear in the contig array (i.e., the iterator

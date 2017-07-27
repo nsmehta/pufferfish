@@ -28,7 +28,8 @@ private:
   std::vector<uint32_t> eqClassIDs_;
   std::vector<std::vector<uint32_t>> eqLabels_;
   std::vector<std::string> refNames_;
-  std::vector<std::vector<util::Position>> contigTable_;
+  //std::vector<std::vector<util::Position>> contigTable_;
+  util::Positions contigTable_;
   uint64_t numContigs_{0};
   sdsl::bit_vector contigBoundary_;
   sdsl::bit_vector::rank_1_type contigRank_;

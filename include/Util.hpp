@@ -249,7 +249,7 @@ struct Positions {
 
   Positions() {}
 
-  inline void addPosition(size_t contigId, uint32_t refOffset, size_t refId, size_t refPos, bool refOri, bool show = false) {		  
+  inline void addPosition(size_t contigId, uint32_t refOffset, size_t refId, size_t refPos, bool refOri) {		  
 
   	size_t idx = contigOffset[contigId] + refOffset-1;
 	refID[idx] = refId;
@@ -321,6 +321,7 @@ struct PackedContigInfo {
   size_t offset;
   uint32_t length;
   uint32_t txpCnt;
+  std::set<uint32_t> txp;
 };
   
 struct RefPos {
